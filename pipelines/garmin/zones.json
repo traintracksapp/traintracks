@@ -1,0 +1,6 @@
+{
+  "_comment": "Karvonen parameters used by post_zone_records.py for the compatibility zone copy on Garmin-posted rows. rhr = resting heart rate, hrmax = max heart rate (bpm). sinceDays = only post activities from the last N days. The app's own zone display uses the floors in goals.json instead.",
+  "rhr": 60,
+  "hrmax": 180,
+  "sinceDays": 14
+}

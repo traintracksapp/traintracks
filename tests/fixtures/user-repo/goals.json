@@ -1,0 +1,32 @@
+{
+  "weekStart": "mon",
+  "goals": [
+    {
+      "id": "cardioDays",
+      "label": "Days with cardio",
+      "kind": "days",
+      "source": "log",
+      "filter": "cardio",
+      "target": 3
+    },
+    {
+      "id": "strengthDays",
+      "label": "Days with strength",
+      "kind": "days",
+      "source": "log",
+      "filter": "strength",
+      "target": 2
+    },
+    {
+      "id": "pushups",
+      "label": "Pushups",
+      "kind": "sum",
+      "source": "log",
+      "field": "reps",
+      "machineIds": [
+        "push-ups"
+      ],
+      "target": 150
+    }
+  ]
+}

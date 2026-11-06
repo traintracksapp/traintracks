@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TrainTracks">
+<meta name="theme-color" content="#0b0f14">
+<meta name="description" content="TrainTracks — a self-hosted workout logger and planner that lives in your own GitHub repo.">
+<title>TrainTracks</title>
+<link rel="icon" href="app/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="app/icon-180.png">
+<link rel="manifest" href="app/manifest.webmanifest">
+<link rel="stylesheet" href="app/styles.css">
+</head>
+<body>
+<div id="app">
+
+<!-- HOME -->
+<div id="s-home" class="scr on">
+  <div class="nav">
+    <div class="brand" aria-label="TrainTracks">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="4" width="28" height="24" rx="6" fill="var(--accent)"/><g stroke="var(--accent-ink)" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="8" x2="11" y2="24"/><line x1="21" y1="8" x2="21" y2="24"/><line x1="8" y1="11" x2="24" y2="11"/><line x1="8" y1="16" x2="24" y2="16"/><line x1="8" y1="21" x2="24" y2="21"/></g></svg>
+      <b>Train<span>Tracks</span></b>
+    </div>
+    <button class="nb" data-act="nav" data-to="reports" title="Weekly report" aria-label="Weekly report">&#128202;</button>
+    <button class="nb" data-act="nav" data-to="settings" title="Settings" aria-label="Settings">&#9881;&#65039;</button>
+  </div>
+  <div class="sc" id="homebody"></div>
+</div>
+
+<!-- GENERIC SUB-SCREENS: rooms, machines, detail, log -->
+<div id="s-rooms" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="rooms-title"></h1></div><div class="sc" id="roomsbody"></div></div>
+<div id="s-machines" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="machines-title"></h1></div><div class="sc"><div class="mg" id="mgrid"></div></div></div>
+<div id="s-detail" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="detail-title"></h1></div><div class="sc" id="detailbody"></div></div>
+<div id="s-log" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="log-title">Log Session</h1></div><div class="sc" id="logbody"></div></div>
+
+<!-- PLAN -->
+<div id="s-plan" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>Today&#8217;s Route</h1></div><div class="sc" id="planbody"></div></div>
+
+<!-- REPORTS + GOALS -->
+<div id="s-reports" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>Weekly Report</h1><button class="nb sm" data-act="nav" data-to="goals">Goals</button></div><div class="sc" id="repbody"></div></div>
+<div id="s-goals" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>Weekly Goals</h1><button class="nb sm" data-act="goals-save">Save</button></div><div class="sc" id="goalsbody"></div></div>
+
+<!-- SETTINGS + PROFILE + EQUIPMENT -->
+<div id="s-settings" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>Settings</h1></div><div class="sc" id="settingsbody"></div></div>
+<div id="s-profile" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>My Profile</h1><button class="nb sm" data-act="profile-save">Save</button></div><div class="sc" id="profilebody"></div></div>
+<div id="s-equipment" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1>Manage Equipment</h1></div><div class="sc" id="eqbody"></div></div>
+<div id="s-gymeq" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="gymeq-title"></h1></div><div class="sc" id="gymeqbody"></div></div>
+<div id="s-roomeq" class="scr"><div class="nav"><button class="nb back" data-act="back" aria-label="Back">&#8249;</button><h1 id="roomeq-title"></h1></div><div class="sc" id="roomeqbody"></div></div>
+
+</div><!-- #app -->
+
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="ld"><div class="sp"></div><div id="ldmsg">Loading&#8230;</div></div>
+<div id="cele" data-act="cele-close">
+  <canvas id="cfw"></canvas>
+  <div class="cecard">
+    <div class="cetrain">&#128642;</div>
+    <div class="cettl">END OF THE LINE</div>
+    <div class="cesub" id="cesub"></div>
+    <button class="cebtn" data-act="cele-close">Done</button>
+    <div class="cehint">tap anywhere to dismiss</div>
+  </div>
+</div>
+<div id="mov" data-act="modal-backdrop"><div class="md" id="mdbody"></div></div>
+<input type="file" id="photoin" accept="image/*" capture="environment" style="display:none">
+
+<script type="module" src="app/main.js"></script>
+<noscript><p style="padding:24px;font-family:sans-serif">TrainTracks needs JavaScript.</p></noscript>
+</body>
+</html>

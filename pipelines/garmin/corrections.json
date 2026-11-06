@@ -1,0 +1,3 @@
+{
+  "_comment": "Hand corrections applied by build_buckets.py when it builds cardio-buckets.csv, keyed by Garmin activity id. keep = [from, to] inclusive 'YYYY-MM-DD HH:MM' window (minutes outside are dropped); set_hr = [{from, to, hr}] treat a minute range as a given HR (sensor misread); add = [{minutes, hr}] extra minutes at a given HR (watch paused). Entries here are personal — the template ships none."
+}

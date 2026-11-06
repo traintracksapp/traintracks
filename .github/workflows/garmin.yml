@@ -1,0 +1,97 @@
+# Garmin pipelines — one scheduled workflow, one commit.
+#
+# Off by default. To turn it on in YOUR repo:
+#   Settings → Secrets and variables → Actions
+#     Secrets:   GARMIN_TOKENS        (from: python pipelines/garmin/garmin_login.py)
+#                GARMIN_DISPLAY_NAME  (optional; only if daily stats come back empty)
+#     Variables: GARMIN_ENABLED = true
+#                GARMIN_TZ      = America/New_York   (your IANA time zone)
+#
+# Each step is independent (continue-on-error), so a Garmin hiccup in one
+# feed never blocks the others. Everything is committed once at the end,
+# after a pull --rebase so the app's own commits are never clobbered.
+name: garmin
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"   # every 3 hours (GitHub fires crons late; that is normal)
+  workflow_dispatch:
+    inputs:
+      fetch_limit:
+        description: "Recent activities to fetch for cardio minutes (300 for a backfill)"
+        required: false
+        default: "30"
+      max_days:
+        description: "Days of wellness history to scan (4000 for a full backfill)"
+        required: false
+        default: "40"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: garmin
+  cancel-in-progress: false
+
+jobs:
+  garmin:
+    if: vars.GARMIN_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+      GARMIN_DISPLAY_NAME: ${{ secrets.GARMIN_DISPLAY_NAME }}
+      GARMIN_TZ: ${{ vars.GARMIN_TZ || 'America/New_York' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install garminconnect
+        run: pip install --quiet garminconnect
+
+      - name: Recent snapshot (garmin-recent.json)
+        continue-on-error: true
+        run: python pipelines/garmin/sync_recent.py
+
+      - name: Cardio minutes (cardio-minutes.csv)
+        continue-on-error: true
+        env:
+          ACTIVITY_FETCH_LIMIT: ${{ inputs.fetch_limit || '30' }}
+        run: python pipelines/garmin/cardio_minutes.py
+
+      - name: Heart-rate buckets (cardio-buckets.csv)
+        continue-on-error: true
+        run: |
+          if [ -f cardio-minutes.csv ]; then
+            python pipelines/garmin/build_buckets.py --cardio cardio-minutes.csv --out cardio-buckets.csv --corrections pipelines/garmin/corrections.json
+          else
+            echo "no cardio-minutes.csv yet"
+          fi
+
+      - name: Daily wellness (daily-wellness.csv)
+        continue-on-error: true
+        env:
+          MAX_DAYS: ${{ inputs.max_days || '40' }}
+        run: python pipelines/garmin/daily_wellness.py
+
+      - name: Post cardio rows to the workout log
+        continue-on-error: true
+        run: |
+          python pipelines/garmin/post_zone_records.py \
+            --cardio cardio-minutes.csv --log-json workout-log.json --log-csv workout-log.csv \
+            --garmin garmin-recent.json --zones pipelines/garmin/zones.json
+
+      - name: Commit and push
+        run: |
+          git add -A -- garmin-recent.json cardio-minutes.csv cardio-buckets.csv daily-wellness.csv workout-log.json workout-log.csv 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No changes."
+            exit 0
+          fi
+          git config user.name "traintracks-garmin"
+          git config user.email "actions@users.noreply.github.com"
+          git commit -m "garmin: $(date -u +%F\ %H:%M) [skip ci]"
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME:-main}"
+          git push

@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-11-05T12:00:00Z",
+  "coachNote": "Easy day: push-ups and a walk.",
+  "exercises": [
+    {
+      "machineId": "push-ups",
+      "gymId": "generic",
+      "machine": "Push Ups",
+      "gym": "Common Machines",
+      "room": "Bodyweight — No Equipment",
+      "sets": [
+        {
+          "set": 1,
+          "reps": 30
+        },
+        {
+          "set": 2,
+          "reps": 30
+        }
+      ]
+    },
+    {
+      "machineId": "walk",
+      "gymId": "generic",
+      "machine": "Walk",
+      "gym": "Common Machines",
+      "room": "Outdoor Activities",
+      "sets": [
+        {
+          "set": 1,
+          "duration": 40,
+          "level": 2
+        }
+      ]
+    }
+  ]
+}

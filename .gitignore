@@ -1,0 +1,9 @@
+# Local scratch — never commit personal data to the template
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+garmin_tokens.json
+.garth/
+*.tmp
+_scratch/
