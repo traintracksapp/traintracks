@@ -167,6 +167,118 @@ class Posting(unittest.TestCase):
         self.assertEqual(P.insertion_index(entries, {"date": "2026-01-01", "time": "10:00:00"}), 3)
 
 
+GYMS = [
+    {"id": "generic", "name": "Common Machines", "rooms": [
+        {"id": "outdoor-activities", "name": "Outdoor Activities", "machines": [{"id": "walk", "name": "Walk"}, {"id": "swim", "name": "Swim"}]},
+        {"id": "cardio", "name": "Cardio", "machines": [{"id": "treadmill", "name": "Treadmill"}, {"id": "elliptical", "name": "Elliptical"},
+            {"id": "stationary-bike-upright", "name": "Stationary Bike (Upright)"}, {"id": "other-cardio", "name": "Other Cardio"}]}]},
+    {"id": "eg", "name": "Example Gym", "rooms": [
+        {"id": "w", "name": "Weights", "machines": [{"id": "r02", "name": "Seated Row"}]},
+        {"id": "c", "name": "Cardio Deck", "machines": [{"id": "m1", "name": "Treadmill"}, {"id": "m2", "name": "Elliptical Cross Trainer"},
+            {"id": "m3", "name": "Peloton", "hidden": True}]}]},
+    {"id": "hotel", "name": "Hotel Gym", "rooms": [{"id": "x", "name": "Gym", "machines": [{"id": "h1", "name": "Treadmill"}]}]},
+]
+
+
+def A(atype, aid="24000000009", day="2026-11-05", hh="07"):
+    return [M(f"{day} {hh}:00", 120, aid=aid, atype=atype), M(f"{day} {hh}:01", 121, aid=aid, atype=atype)]
+
+
+def write_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+class IndoorRouting(unittest.TestCase):
+    def post(self, cardio, log=(), mapping=None):
+        posted, skipped = P.plan_entries(cardio, list(log), {}, mapping or {}, 46, 168, gyms=GYMS)
+        return (posted[0][2] if posted else None), skipped
+
+    def test_guess_the_gym_from_the_same_day(self):
+        log = [{"date": "2026-11-05", "time": "06:30:00", "gym_id": "eg", "machine_id": "r02", "reps": 10}]
+        e, _ = self.post(A("treadmill_running"), log)
+        self.assertEqual((e["gym_id"], e["room_id"], e["machine_id"], e["machine"]), ("eg", "c", "m1", "Treadmill"))
+        self.assertIn("Gym guessed", e["notes"])
+        e, _ = self.post(A("elliptical"), log)
+        self.assertEqual(e["machine_id"], "m2")                          # "Elliptical Cross Trainer" matches by name
+
+    def test_nearest_gym_in_time_wins(self):
+        log = [{"date": "2026-11-05", "time": "06:50:00", "gym_id": "hotel", "machine_id": "x", "reps": 5},
+               {"date": "2026-11-05", "time": "18:00:00", "gym_id": "eg", "machine_id": "r02", "reps": 10}]
+        e, _ = self.post(A("treadmill_running"), log)
+        self.assertEqual(e["gym_id"], "hotel")
+
+    def test_no_session_that_day_or_no_matching_machine_goes_to_common_machines(self):
+        e, _ = self.post(A("treadmill_running"))
+        self.assertEqual((e["gym_id"], e["machine_id"]), ("generic", "treadmill"))
+        self.assertIn("Posted to Common Machines", e["notes"])
+        log = [{"date": "2026-11-05", "time": "06:30:00", "gym_id": "eg", "machine_id": "r02", "reps": 10}]
+        e, _ = self.post(A("indoor_cycling"), log)                       # Example Gym's Peloton is hidden
+        self.assertEqual((e["gym_id"], e["machine_id"]), ("generic", "stationary-bike-upright"))
+
+    def test_other_days_and_garmin_rows_do_not_count_for_the_guess(self):
+        log = [{"date": "2026-11-04", "time": "07:00:00", "gym_id": "eg", "machine_id": "r02", "reps": 10},
+               {"date": "2026-11-05", "time": "06:00:00", "gym_id": "eg", "machine_id": "m1", "duration_sec": 600, "garmin_id": "1"}]
+        e, _ = self.post(A("treadmill_running"), log)
+        self.assertEqual(e["gym_id"], "generic")
+
+    def test_indoor_cardio_hiit_and_unknown_types_go_to_other_cardio(self):
+        for t in ("indoor_cardio", "hiit", "multi_sport", "something_new"):
+            e, skipped = self.post(A(t))
+            self.assertEqual((e["gym_id"], e["machine_id"]), ("generic", "other-cardio"), t)
+            self.assertIn("Other Cardio", e["notes"])
+
+    def test_history_picks_the_machine_and_the_gym(self):
+        gyms = [GYMS[0], {"id": "eg", "name": "Example Gym", "rooms": [{"id": "c", "name": "Cardio", "machines": [
+            {"id": "rb", "name": "Recumbent Stationary Bike"}, {"id": "pel", "name": "Peloton"}, {"id": "t", "name": "Treadmill"}, {"id": "w", "name": "Row Machine"}]}]}]
+        # name order: Peloton beats the recumbent bike when there is no history
+        log = [{"date": "2026-11-05", "time": "06:30:00", "gym_id": "eg", "machine_id": "w", "reps": 10}]
+        posted, _ = P.plan_entries(A("indoor_cycling"), log, {}, {}, 46, 168, gyms=gyms)
+        self.assertEqual(posted[0][2]["machine_id"], "pel")
+        # no session that day: the last treadmill activity's place is used
+        cardio = A("treadmill_running", aid="24000000001", day="2026-11-01") + A("treadmill_running", aid="24000000002", day="2026-11-05")
+        log = [{"date": "2026-11-01", "time": "07:00:00", "gym_id": "eg", "machine_id": "t", "duration_sec": 1800, "garmin_id": "24000000001"}]
+        posted, _ = P.plan_entries(cardio, log, {}, {}, 46, 168, gyms=gyms)
+        e = posted[0][2]
+        self.assertEqual((e["gym_id"], e["machine_id"]), ("eg", "t"))
+        self.assertIn("last session of this kind", e["notes"])
+
+    def test_strength_training_is_never_posted(self):
+        e, skipped = self.post(A("strength_training"))
+        self.assertIsNone(e)
+        self.assertIn("strength", skipped[0][2])
+
+    def test_mapping_still_wins(self):
+        mapping = {"other": {"machine_id": "jog1", "machine": "Jog", "gym": "Common Machines", "room": "Outdoor Activities", "gym_id": "generic", "room_id": "outdoor-activities"}}
+        e, _ = self.post(A("other"), mapping=mapping)
+        self.assertEqual(e["machine_id"], "jog1")
+        self.assertNotIn("move it", e["notes"])
+
+    def test_swims_post_outdoors(self):
+        e, _ = self.post(A("lap_swimming"))
+        self.assertEqual(e["machine_id"], "swim")
+
+    def test_hand_logged_duplicate_still_held_back(self):
+        log = [{"date": "2026-11-05", "time": "07:05:00", "gym_id": "eg", "machine_id": "m1", "machine": "Treadmill", "duration_sec": 1800}]
+        e, skipped = self.post(A("treadmill_running"), log)
+        self.assertIsNone(e)
+        self.assertIn("duplicate", skipped[0][2])
+
+    def test_load_gyms_reads_the_equipment_folder(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        os.makedirs(os.path.join(d, "generic")); os.makedirs(os.path.join(d, "my-gyms", "eg")); os.makedirs(os.path.join(d, "my-gyms", "old"))
+        write_json(os.path.join(d, "generic", "gym.json"), GYMS[0])
+        write_json(os.path.join(d, "generic.local.json"), {"hidden": ["swim"], "machines": [{"room_id": "outdoor-activities", "id": "jog1", "name": "Jog"}]})
+        write_json(os.path.join(d, "my-gyms", "eg", "gym.json"), GYMS[1])
+        write_json(os.path.join(d, "my-gyms", "old", "gym.json"), {**GYMS[2], "id": "old", "removed": True})
+        gyms = P.load_gyms(d)
+        self.assertEqual([g["id"] for g in gyms], ["generic", "eg"])
+        self.assertIsNotNone(P.find_machine(gyms, "generic", machine_id="jog1"))
+        self.assertIsNone(P.find_machine(gyms, "generic", machine_id="swim"))   # hidden
+
+
 class CardioMinutes(unittest.TestCase):
     def test_minute_split_uses_tz(self):
         tz = ZoneInfo("America/New_York")

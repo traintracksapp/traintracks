@@ -65,7 +65,7 @@ saw only the code rediscovered a deliberate decision as a bug.
 
 ## Garmin decisions
 
-- **Posting:** outdoor walks, runs, rides and hikes post automatically; other types need an entry in `mapping.json`; an activity overlapping a hand-logged timed session is skipped for review. Another *Garmin* activity nearby is not treated as a manual duplicate (0.1.0 did).
+- **Posting: every Garmin activity is posted** (owner's decision, 7 Nov 2026), except strength training and sessions overlapping one logged by hand. Indoor sessions go to the gym you logged anything else at that day, else where your last session of that kind went, else Common Machines; unknown kinds go to Other Cardio. The note says how it was placed, and **Move** in the app fixes a wrong guess. On the owner's history this matched their own choice 16 times out of 23; the misses were travel days, first sessions with no history, and their own `mapping.json`. 0.1.0 skipped all indoor types without a mapping, and treated another nearby *Garmin* activity as a manual duplicate.
 - **Averages are judged at the precision they are shown**: an average sleep of 7.09 h shows as 7.1 h, so against a 7.1 h target it is a hit (as in LogTrim).
 - **Scale and blood pressure** are rebuilt in full each run from `GARMIN_HISTORY_START`; if any request fails, the files are left unchanged rather than losing readings.
 

@@ -17,6 +17,7 @@ A rewrite of TrainTracks to spec 1.3 (`docs/SPEC.md`).
 - In-app updater: shows the changelog, then copies changed app files in one commit (pinned to the template's commit; never touches your data or Garmin settings).
 - Optional Cloudflare Worker (`worker/worker.js`): secret in an Authorization header, plans sent as a POST body, log writes as one commit with the CSV built from the JSON, one Garmin workflow to trigger.
 - Guides rewritten for this version: setup, coach (reads CSVs by column name; plans can carry variations), Garmin, Worker.
+- Indoor Garmin sessions are posted too: placed in the gym you were at that day (or where your last one went), else Common Machines; anything else goes to a new Other Cardio machine. **Move to another machine** in a session's history fixes a wrong guess and keeps the Garmin link.
 - Browser smoke test (`tests/e2e/run.mjs`), also run in CI.
 - A log save is one commit (JSON + CSV together), reloading and re-applying if another writer got there first.
 

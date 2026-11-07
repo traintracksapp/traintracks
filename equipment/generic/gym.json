@@ -289,6 +289,13 @@
           "muscles_worked": "Glutes, quadriceps, hamstrings, calves — high-intensity cardio",
           "image": "stair-climber.jpg",
           "log_type": "pace"
+        },
+        {
+          "id": "other-cardio",
+          "name": "Other Cardio",
+          "muscles_worked": "Cardiovascular system",
+          "image": null,
+          "log_type": "mins"
         }
       ]
     },

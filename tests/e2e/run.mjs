@@ -104,8 +104,9 @@ async function openMachineByName(gymName, machineName) {
   await page.click(`#homebody .row:has-text("${gymName}")`);
   await page.waitForTimeout(200);
   if (await page.$('#s-rooms.on')) {
-    for (const row of await page.$$('#roomsbody .row')) {
-      await row.click(); await page.waitForTimeout(150);
+    const n = (await page.$$('#roomsbody .row')).length;
+    for (let i = 0; i < n; i++) {
+      await page.click(`#roomsbody .row >> nth=${i}`); await page.waitForTimeout(150);
       if (await page.$(`.mc:has-text("${machineName}")`)) break;
       await page.click('#s-machines .back');
     }
@@ -185,6 +186,20 @@ if (usingFixture) {
   const t3 = await waitToast();
   check('negative weight saved', /saved/.test(t3) && readLog().some(e => e.machine_id === 'assist' && e.weight_lb === -85), t3);
   await shot('assisted');
+
+  // 5b. Move a session to another machine (the fixture's treadmill session, which has heart rate)
+  await openMachineByName('Example Gym', 'Treadmill');
+  const tmBefore = readLog().find(e => e.id === 'f4');
+  await page.click('[data-act="move-session"]');
+  await shot('move-modal');
+  await page.selectOption('#mvto', 'generic|cardio|treadmill');
+  await page.click('[data-act="move-session-do"]');
+  await page.waitForFunction(() => /Moved|failed/.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
+  const tmAfter = readLog().find(e => e.id === 'f4');
+  check('session moved to the other machine', tmAfter.gym_id === 'generic' && tmAfter.machine_id === 'treadmill' && tmAfter.room_id === 'cardio' && tmAfter.machine === 'Treadmill');
+  check('moved session keeps its fields', tmAfter.hr_avg_bpm === tmBefore.hr_avg_bpm && tmAfter.duration_sec === tmBefore.duration_sec && tmAfter.date === tmBefore.date);
+  check('old machine has no sessions left', (await text('#detailbody')).includes('No sessions logged yet'));
+  await openMachineByName('Example Gym', 'Assisted Pull-up');
 
   // 6. Bad input is refused with a message, nothing written
   await page.click('[data-act="start-log"]');

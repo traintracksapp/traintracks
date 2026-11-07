@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_COLUMNS, LOG_TYPE_FIELDS, newId, inSession, sessionEntries, sortLog, mergeSession,
-  removeSession, lastSession, sessionDates, machineSessions, garminIdOf, logToCSV, logToJSON } from '../lib/log.js';
+  removeSession, lastSession, sessionDates, machineSessions, moveSession, garminIdOf, logToCSV, logToJSON } from '../lib/log.js';
 import { parseCSV } from '../lib/csv.js';
 
 // Made-up data only: "Example Gym" (gym_id "eg"), machine "r02".
@@ -196,4 +196,30 @@ test('machineSessions: newest first; two variants on one day are two sessions', 
     E({ date: '2026-11-06', reps: 9 }), E({ date: '2026-11-06', machine_id: 'other' })];
   const s = machineSessions(log, 'r02', 'eg');
   assert.deepEqual(s.map(x => [x.date, x.variant.join(';'), x.sets.length]), [['2026-11-06', '', 1], ['2026-11-04', 'wide', 1], ['2026-11-04', '', 2]]);
+});
+
+const TO = { gym_id: 'other', gym: 'Other Gym', room_id: 'c', room: 'Cardio', machine_id: 'tm', machine: 'Treadmill' };
+
+test('moveSession: moves every set, keeps every field (garmin link, zones, notes)', () => {
+  const log = [E({ id: 'g1', duration_sec: 1800, garmin_id: '24000000001', zone1_sec: 1200, notes: 'Garmin walk' }), E({ id: 'keep', machine_id: 'x' })];
+  const out = moveSession(log, S(), TO);
+  const m = out.find(e => e.id === 'g1');
+  assert.deepEqual([m.gym_id, m.gym, m.room_id, m.machine_id, m.machine, m.set], ['other', 'Other Gym', 'c', 'tm', 'Treadmill', 1]);
+  assert.equal(m.garmin_id, '24000000001');
+  assert.equal(m.zone1_sec, 1200);
+  assert.equal(m.date, '2026-11-05');
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map(e => e.id), ['g1', 'keep'], 'rows stay in place');
+});
+
+test('moveSession: onto a machine that already has a session that day, sets are added after it', () => {
+  const log = [E({ id: 'a', gym_id: 'other', machine_id: 'tm', set: 1 }), E({ id: 'b', set: 1 }), E({ id: 'c', set: 2 })];
+  const out = moveSession(log, S(), TO);
+  assert.deepEqual(out.filter(e => e.machine_id === 'tm').map(e => [e.id, e.set]), [['a', 1], ['b', 2], ['c', 3]]);
+});
+
+test('moveSession: same machine or nothing to move → unchanged', () => {
+  const log = [E({ id: 'a' })];
+  assert.equal(moveSession(log, S(), { ...TO, gym_id: 'eg', machine_id: 'r02' }), log);
+  assert.equal(moveSession(log, S({ date: '2020-01-01' }), TO), log);
 });

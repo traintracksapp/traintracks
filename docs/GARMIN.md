@@ -52,14 +52,26 @@ overwrite them.
   for the zone copy written on Garmin rows of the log; `since_days`: only post
   activities from the last N days. The app's own zone display uses the zone
   floors in Weekly goals instead.
-- **`mapping.json`**: where indoor activities go. Outdoor walks, runs, rides
-  and hikes post by themselves; anything else needs an entry, by activity type
-  (every activity of that type) or by activity id (just one):
+- **`mapping.json`** (optional): sends an activity type, or one activity id, to
+  a machine you choose, overriding the rules below:
   ```json
   { "indoor_cycling": { "machine_id": "m1712345678901", "machine": "Exercise Bike", "gym_id": "home-gym",
                         "gym": "Home Gym", "room_id": "main", "room": "Main", "word": "ride" } }
   ```
   An activity that overlaps a session you logged by hand is skipped, so it isn't counted twice.
+
+  Without a mapping, **every Garmin activity is posted** (except strength
+  training, which you log as sets):
+  - **Outdoor** walks, runs, rides, hikes and swims → Common Machines' Outdoor Activities.
+  - **Indoor** treadmill, elliptical, bike, rower and stair sessions →
+    1. if you logged anything else that day, the matching machine in that gym
+       (the one you used before for this kind of session there, or one found by name);
+    2. otherwise wherever your last session of this kind went;
+    3. otherwise the matching machine in Common Machines.
+  - **Anything else** (indoor cardio, HIIT, classes…) → **Other Cardio** in Common Machines.
+
+  The row's note says how it was placed. If it's wrong, open the machine's
+  history and tap **↪️ Move**: everything moves, including the Garmin link.
 - **`corrections.json`**: hand fixes for bad watch data, keyed by activity id:
   ```json
   { "24000000001": {
@@ -85,6 +97,6 @@ have **Actions: Read and write**.
 - **Login fails after about a year**: the token expired. Same fix.
 - **Daily stats are empty**: add the `GARMIN_DISPLAY_NAME` secret (the login
   script prints it).
-- **An indoor activity didn't appear in the log**: add its type to `mapping.json`.
+- **An activity landed on the wrong machine**: move it in the app (↪️ in the machine's history). If a type always goes wrong, add it to `mapping.json`.
 - **Nothing happens on schedule**: check `GARMIN_ENABLED` is exactly `true`, and
   look at the **Actions** tab for the run's log.
