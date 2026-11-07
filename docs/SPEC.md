@@ -12,6 +12,7 @@
 | D15 | **One convention for every data file.** snake_case names; each number in one unit named by its suffix (`_sec`, `_mi`, `_lb`, `_bpm`, `_pct`…); durations in whole seconds; one date, time and timestamp format. | `docs/DATA-FORMAT.md` (format version 2) is the authority. Where §4, §8 and §10 show version 1 names (`gymId`, `duration`, `sleep_hours`…), they describe the old format the migration reads. |
 | D16 | **No personal data in the spec or the template repo.** | Personal details moved to the owner's personal notes; Appendices A and B removed; examples made generic. The spec is kept in the repo as `docs/SPEC.md`. |
 | — | CSV row order stays **newest first**. | §4.2. |
+| D17 | **Erase 0.1.0's history from the template at cut-over** (reverses "history kept" in D11). The template has no forks or users yet, and 0.1.0's history stays in the owner's own repo. | §0.6 and §18 (phase 5). The rebuild becomes `main`'s first commit. |
 
 ---
 
@@ -22,7 +23,7 @@
 | D8 | **The name is TrainTracks**, on the domain `traintracks.si`. | The `NEWNAME` placeholder is gone (§0.4, §17.1). Template repo: `traintracksapp/traintracks`. the owner's repo: the owner's TrainTracks repo. |
 | D9 | **Only TrainTracks repos are touched. LogTrim is never touched.** | §0.5 rewritten. All LogTrim repos, its Worker, its skill, its coach Project and its still-running Garmin Actions are read-only, with no end date. |
 | D10 | **Rebuild, don't patch, the first TrainTracks build (0.1.0).** It works and is tested, but it was built to spec 1.0 and contradicts D1, D3, D4, D6 and D7. | New §19 lists what 0.1.0 got wrong and what is worth reusing. Its code is reference, like LogTrim's. |
-| D11 | **Build on a branch, then replace.** The rebuild is developed on a branch of `traintracksapp/traintracks`. When it is ready, one commit replaces everything on `main`; the git history is kept. the owner's TrainTracks repo keeps running 0.1.0 at `traintracks.si` the whole time. | §0.5, §17.6 and §18 rewritten. The "clean history" advice in §16 no longer applies to these repos. |
+| D11 | **Build on a branch, then replace.** The rebuild is developed on a branch of `traintracksapp/traintracks`. When it is ready, it replaces `main`; 0.1.0's history is erased from the template (revised in 1.3, D17). the owner's TrainTracks repo keeps running 0.1.0 at `traintracks.si` the whole time. | §0.5, §17.6 and §18 rewritten. The "clean history" advice in §16 no longer applies to these repos. |
 | D12 | **Migration source is the owner's TrainTracks repo**, migrated in place. the owner keeps logging in TrainTracks 0.1.0 until cut-over. | §14 and §18 (phase 5). LogTrim import stays as a read-only path for other users. `CNAME`, secrets and repository variables are kept. |
 | D13 | **Garmin tokens: the new JSON format only.** `garminconnect` 0.3.20 changed its token format and can no longer resume the old ones. | §10, §15.1, §16 and §18: replaces "accept both formats". Old tokens are detected and rejected with instructions to run the login script again. |
 | D14 | **The template is the only source of app code.** 0.1.0's Garmin fix and `.nojekyll` landed in the owner's repo but never reached the template. | New rule in §12: fixes go to the template first; user repos receive code only through the updater. |
@@ -74,7 +75,7 @@ Also in 1.1:
 
    Reading them is fine. The new app may read the public `logtrim/gyms` catalog. Any catalog change the new app needs goes into a new catalog repo (e.g. `traintracksapp/gyms`).
 6. **Where the work happens (D11).**
-   - The rebuild is developed on a branch (e.g. `rebuild`) of `traintracksapp/traintracks`. When it is ready, one commit replaces everything on `main`, with the history kept.
+   - The rebuild is developed on a branch (e.g. `rebuild`) of `traintracksapp/traintracks`. When it is ready, `main` is replaced by the rebuild with a fresh history: a one-time force-push, confirmed with the owner first, so 0.1.0's commits (which contain personal traces) are not kept in the template (D17). 0.1.0's full history remains in the owner's own repo.
    - the owner's TrainTracks repo is **not** touched during the build. the owner keeps logging there with 0.1.0 at `traintracks.si`. Its Garmin Action keeps running.
    - At cut-over (§18, phase 5), the owner's TrainTracks repo receives the new code and its data is converted in place. `CNAME`, repository secrets and variables are kept.
 7. **TrainTracks 0.1.0 is reference, not scaffolding (D10).** See §19 for what it got wrong and which parts are worth lifting.
@@ -794,7 +795,7 @@ Each phase ends with its tests green in CI and a short demo against the parity c
 | **2 — Reports & plan** | Variant picker, history chips and variant goal filters (§4.9); `variations` for the generic gym; weekly report and goals editor; Today's Plan and celebration; profile; equipment manager with photo resize; catalog import (read-only from `logtrim/gyms`). | Report numbers match LogTrim for the last 8 weeks. |
 | **3 — Garmin** | One consolidated `garmin.yml` gated by `GARMIN_ENABLED`; `GARMIN_TZ`; JSON tokens only, `garminconnect>=0.3.20` pinned (D13); re-fetch last N days; skip `garmin-recent.json` commit when only `fetchedAt` changed; buckets + corrections + wellness + zone posting; scale and blood-pressure CSVs (§10). | Running on the scratch repo. `cardio-buckets.csv` matches LogTrim's. At most one commit per run. |
 | **4 — Worker, updater, coach** | New Worker (§11) + its tests; new skill pointing at it; updater with generic-gym merge and changelog preview; Project-Instructions template (reads the CSV by header name, plans can carry variants); date-change-while-editing fix. | A second "friend" repo created with "Use this template" can be set up from SETUP.md alone. |
-| **5 — Replace and migrate** | One commit on `traintracksapp/traintracks` `main` replaces 0.1.0 with the rebuild (history kept). Then the owner's TrainTracks repo receives the new code and its data is converted in place (D12), keeping `CNAME`, secrets and variables; the owner downloads a ZIP backup first. Links unlinked early Garmin rows (§9.5) with the owner's confirmation. Cut-over checklist. LogTrim untouched throughout. | The owner's decision (§17.6). |
+| **5 — Replace and migrate** | `traintracksapp/traintracks` `main` is replaced by the rebuild with a fresh history (one-time force-push, confirmed first; D17). Then the owner's TrainTracks repo receives the new code and its data is converted in place (D12), keeping `CNAME`, secrets and variables; the owner downloads a ZIP backup first. Links unlinked early Garmin rows (§9.5) with the owner's confirmation. Cut-over checklist. LogTrim untouched throughout. | The owner's decision (§17.6). |
 
 ---
 
