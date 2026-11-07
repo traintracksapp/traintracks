@@ -57,7 +57,7 @@ the same commit on every save and is never edited by hand.
 | `duration_sec` | integer | Duration, for every kind of timed exercise (planks, classes, cardio). |
 | `distance_mi` | number | Distance. |
 | `speed_mph` | number | Treadmill speed. |
-| `level` | number | Machine resistance/level (elliptical, bike). |
+| `level` | number | Machine resistance/level (elliptical, bike), when recorded. |
 | `incline_pct` | number | Treadmill incline. |
 | `hr_avg_bpm` | integer | Average heart rate. |
 | `garmin_id` | string | Garmin activity id when the row is linked to one. |
@@ -79,7 +79,7 @@ Which fields each kind of machine uses:
 | `time` | Time (planks etc.) | `duration_sec` |
 | `mins` | Time (classes) | `duration_sec` (entered in minutes) |
 | `cardio` | Treadmill | `duration_sec`, `speed_mph`, `incline_pct`, `distance_mi`, `hr_avg_bpm` |
-| `pace` | Duration & level (elliptical, bike) | `duration_sec`, `level`, `distance_mi`, `hr_avg_bpm` |
+| `pace` | Duration & speed (treadmill, elliptical, bike, rower) | `duration_sec`, `speed_mph`, `level`, `distance_mi`, `hr_avg_bpm` |
 | `walk` | Distance & time (outdoors) | `distance_mi`, `duration_sec`, `hr_avg_bpm` |
 
 ### CSV layout
@@ -137,7 +137,7 @@ Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
 | `level`, logType `cardio`, **Garmin-linked** row | `distance_mi` (the Garmin posting put miles there) |
 | `level`, logType `cardio`, hand-logged row | `speed_mph` |
 | `level`, logType `pace`, Garmin-linked row | `distance_mi` |
-| `level`, logType `pace`, hand-logged row | `level` |
+| `level`, logType `pace`, hand-logged row | `speed_mph` (LogTrim's form labelled it MPH) |
 | `level` on a machine that no longer exists in any gym | `level`, unchanged and reported: early rows used it for pace (min/mi) or distance, so the owner decides |
 | negative `weight` | kept (assistance, see `weight_lb`) |
 | other negative numbers | kept as they are and reported |

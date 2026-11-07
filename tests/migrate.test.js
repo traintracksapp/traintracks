@@ -99,8 +99,8 @@ test('cardio, Garmin-linked: level is DISTANCE', () => {
   assert.equal(e.duration_sec, 2093);
 });
 
-test('pace: hand-logged level stays level; Garmin-linked is distance', () => {
-  assert.equal(conv({ gymId: 'generic', machineId: 'elliptical', duration: 30, level: 8 }).level, 8);
+test('pace: hand-logged level is speed (LogTrim labelled it MPH); Garmin-linked is distance', () => {
+  assert.equal(conv({ gymId: 'generic', machineId: 'elliptical', duration: 30, level: 3.5 }).speed_mph, 3.5);
   const g = conv({ gymId: 'generic', machineId: 'elliptical', duration: 30, level: 4.29, garminId: '123456789' });
   assert.equal(g.distance_mi, 4.29);
   assert.equal(g.garmin_id, '123456789');
