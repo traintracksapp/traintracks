@@ -5,7 +5,7 @@ served by GitHub Pages from the user's own GitHub repo; all data are files in
 that repo, written through the GitHub API with a fine-grained token.
 
 This repo (`traintracksapp/traintracks`) is the **template** users copy with
-"Use this template". The `rebuild` branch is a fresh rewrite to spec 1.2;
+"Use this template". The `rebuild` branch is a fresh rewrite to spec 1.3 (`docs/SPEC.md`);
 `main` still holds version 0.1.0 until cut-over, when the rebuild replaces it with
 a fresh history (one-time force-push, confirmed with the owner first).
 
