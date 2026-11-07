@@ -137,6 +137,8 @@ Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
 | `level`, logType `cardio`, hand-logged row | `speed_mph` |
 | `level`, logType `pace`, Garmin-linked row | `distance_mi` |
 | `level`, logType `pace`, hand-logged row | `level` |
+| `level` on a machine that no longer exists in any gym | `level`, unchanged and reported: early rows used it for pace (min/mi) or distance, so the owner decides |
+| negative numbers (e.g. an assisted machine's counterweight) | kept as they are and reported |
 | `zone1` … `zone5` (minutes) | `zone1_sec` … `zone5_sec` = minutes × 60, rounded |
 | `Garmin <id>` tag in `notes`, no `garminId` | `garmin_id` set; the note text is kept |
 | (none) | `variant` = `[]` |
