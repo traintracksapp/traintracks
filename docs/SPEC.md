@@ -425,7 +425,7 @@ Screens in the current app (`nav(...)` targets): `home`, `rooms`, `machines`, `d
 - **Profile** (§4.3).
 - **Weekly Goals editor** (`renderGoalsEditor`): add from presets (`GOAL_PRESETS`: days with cardio/strength, minutes in an HR range, reps/seconds of an exercise (machine picker), steps, sleep, HRV, resting HR), edit targets, week start day, **Heart Rate Zones** floors (only shown when a bucket file exists). Saves `goals.json`.
 - **Manage Equipment:** gyms → rooms → machines CRUD, photo upload from the phone camera, generic gym editable but not renamable/deletable, hidden machines dimmed with 👁️ Unhide, **📚 Import from Gym Catalog** (Import / Replace).
-- **Update App from Template** (§12) with a status line.
+- **Update App from Template** (§12) with a status line, and the **app version shown next to it near the top of Settings** (0.1.0 hid it in small text at the very bottom).
 - **Reload Data.**
 
 ### 5.5 Behaviours the rebuild must keep
