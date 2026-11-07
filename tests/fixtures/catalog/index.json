@@ -1,0 +1,1 @@
+{ "version": "2026-09-18", "gyms": [ { "id": "park", "name": "Park Bars", "location": "Somewhere", "machines": 2, "version": 1, "path": "gyms/park" } ] }

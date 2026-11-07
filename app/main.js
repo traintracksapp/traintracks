@@ -9,6 +9,11 @@ import { home } from './ui/nav.js';
 import { renderHome } from './ui/home.js';
 import './ui/gyms.js';
 import './ui/logform.js';
+import './ui/plan.js';
+import './ui/reports.js';
+import './ui/goalsedit.js';
+import './ui/equipment.js';
+import './ui/profile.js';
 import { applyTheme } from './ui/settings.js';
 import { STORAGE, APP_VERSION } from '../lib/config.js';
 

@@ -1,0 +1,9 @@
+{
+  "generated_at": "2026-11-07T12:00:00Z",
+  "coach_note": "Short session: rows, then an easy treadmill <b>walk</b>.",
+  "exercises": [
+    { "machine_id": "r02", "gym_id": "example-gym", "machine": "Seated Row", "variant": ["wide"], "sets": [ { "set": 1, "weight_lb": 60, "reps": 12 }, { "set": 2, "weight_lb": 65, "reps": "10" } ], "note": "Slow on the way back." },
+    { "machine_id": "tm", "gym_id": "example-gym", "machine": "Treadmill", "sets": [ { "set": 1, "duration_sec": 1200, "speed_mph": 3.2, "incline_pct": 3 } ] },
+    { "machine_id": "nope", "machine": "Not in any gym <img src=x>" }
+  ]
+}

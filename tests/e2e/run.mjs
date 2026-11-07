@@ -66,8 +66,13 @@ async function openPage(colorScheme = 'dark') {
     await route.fulfill({ status: r.status, contentType: 'application/json', body });
   });
   await page.route(/https:\/\/raw\.githubusercontent\.com\/.*/, async route => {
-    const m = /^\/[^/]+\/[^/]+\/[^/]+\/(.*)$/.exec(new URL(route.request().url()).pathname);
-    const rel = m ? decodeURIComponent(m[1]) : '';
+    const u = new URL(route.request().url());
+    const m = /^\/([^/]+)\/([^/]+)\/[^/]+\/(.*)$/.exec(u.pathname);
+    const rel = m ? decodeURIComponent(m[3]) : '';
+    if (m && m[1] === 'logtrim' && m[2] === 'gyms') { // the public gym catalog, served from the fixture
+      const f = path.join(ROOT, 'tests/fixtures/catalog', rel);
+      return fs.existsSync(f) ? route.fulfill({ status: 200, contentType: 'application/json', body: fs.readFileSync(f) }) : route.fulfill({ status: 404, body: 'nf' });
+    }
     if (binaries[rel]) return route.fulfill({ status: 200, contentType: 'image/jpeg', body: fs.readFileSync(binaries[rel]) });
     return route.fulfill({ status: 404, body: 'nf' });
   });
@@ -205,6 +210,95 @@ if (del) {
   await page.click('[data-act="modal-ok"]');
   const t4 = await waitToast();
   check('session deleted', /deleted/.test(t4) && readLog().length < size, t4);
+}
+
+if (usingFixture) {
+  // 8a. Today's route: shown on home; coach text is shown as text, never as HTML
+  await goHome();
+  check('home shows the route card', (await page.$('.pc')) != null);
+  check('home shows the week strip', (await page.$('.wk')) != null);
+  await page.click('.pc');
+  await shot('plan');
+  check('plan has 3 stops', (await page.$$('.stop')).length === 3);
+  check('coach HTML is escaped', (await text('#planbody')).includes('<b>walk</b>') && !(await page.$('#planbody b:has-text("walk")')));
+  check('injected image not created', (await page.$('#planbody img')) == null);
+  check('unknown machine marked', (await text('#planbody')).includes('Not in your equipment'));
+  // log the first stop from the plan: prefilled sets and the planned variation
+  await page.click('.stop >> nth=0');
+  await page.waitForTimeout(200);
+  const vals = await page.$$eval('#stb input', els => els.map(e => e.value));
+  check('plan prefills the sets', vals.join(',') === '60,12,65,10', vals.join(','));
+  check('plan pre-selects its variation', (await page.$('.vc.on:has-text("wide")')) != null);
+  await page.click('[data-act="log-save"]');
+  const tp = await waitToast();
+  check('logged from the plan', /saved/.test(tp) && readLog().some(e => e.machine_id === 'r02' && (e.variant || []).includes('wide') && e.weight_lb === 65), tp);
+  await page.waitForTimeout(300);
+  check('stop marked done', (await page.$$('.stop.done')).length === 1);
+  await page.click('.stop >> nth=1');
+  await page.click('[data-act="log-save"]');
+  await waitToast();
+  await page.waitForTimeout(500);
+  check('two of three stops done', (await text('.pprog')).includes('2 of 3'));
+  await page.click('#s-plan .back');
+
+  // 8b. Weekly report and goals editor
+  await page.click('#s-home [data-act="nav"][data-to="reports"]');
+  await shot('report');
+  check('report has a card per goal', (await page.$$('.rc')).length === 3);
+  check('row reps goal counts the plan session', /\d+ \/ 60/.test(await text('.rc:has-text("Seated row reps") .rcv')));
+  await page.click('.rc .rch');
+  await page.click('[data-act="week-shift"][data-n="-1"]');
+  check('earlier week shown', (await text('.wkttl')).includes('Last week'));
+  await page.click('#s-reports [data-act="nav"][data-to="goals"]');
+  await shot('goals');
+  await page.click('[data-act="goal-add"]');
+  await page.click('.mlist .sl:has-text("Reps of an exercise")');
+  await page.selectOption('#gpm', 'r02');
+  await page.fill('#gpt', '80');
+  await page.fill('#gpv', 'wide');
+  await page.click('[data-act="goal-pick-done"]');
+  await page.click('[data-act="goals-save"]');
+  await page.waitForTimeout(600);
+  const goalsSaved = JSON.parse(fake.read('goals.json'));
+  const added = goalsSaved.goals.find(g => (g.variants || []).includes('wide'));
+  check('goal with a variation filter saved', !!added && added.machine_ids[0] === 'r02' && added.target === 80 && goalsSaved.week_start === 'sat');
+  await goHome();
+
+  // 8c. Profile
+  await page.click('#s-home [data-act="nav"][data-to="settings"]');
+  await page.click('#settingsbody [data-act="nav"][data-to="profile"]');
+  await page.fill('#p-limitations', 'no deep squats');
+  await page.click('[data-act="profile-save"]');
+  await page.waitForTimeout(500);
+  const prof = JSON.parse(fake.read('profile.json'));
+  check('profile saved with snake_case keys', prof.limitations === 'no deep squats' && prof.first_name === 'Sam');
+
+  // 8d. Equipment: add a machine with variations; catalog import
+  await page.click('#settingsbody [data-act="nav"][data-to="equipment"]');
+  await shot('equipment');
+  await page.click('#eqbody .row:has-text("Example Gym")');
+  await page.click('#gymeqbody .row:has-text("Weight Room")');
+  await page.click('[data-act="eq-m-add"]');
+  await page.fill('#m1', 'Cable Fly');
+  await page.fill('#m4', 'height: low, mid, high');
+  await shot('machine-modal');
+  await page.click('[data-act="eq-m-add-do"]');
+  await page.waitForTimeout(600);
+  const eg = JSON.parse(fake.read('equipment/my-gyms/example-gym/gym.json'));
+  const fly = eg.rooms[0].machines.find(m => m.name === 'Cable Fly');
+  check('machine added with variations', !!fly && fly.variations && fly.variations.height.join() === 'low,mid,high' && fly.log_type === 'weight');
+  check('other machines kept their variations', eg.rooms[0].machines.find(m => m.id === 'r02').variations.grip.length === 3);
+  await page.click('#s-roomeq .back');
+  await page.click('#s-gymeq .back');
+  await page.click('[data-act="catalog-open"]');
+  await page.waitForTimeout(300);
+  await shot('catalog');
+  await page.click('[data-act="catalog-import"][data-id="park"]');
+  await page.waitForTimeout(1200);
+  const park = fake.read('equipment/my-gyms/park/gym.json');
+  check('catalog gym imported and converted', !!park && JSON.parse(park).rooms[0].machines[0].log_type === 'reps' && JSON.parse(park).source === 'logtrim/gyms@2026-09-18');
+  await goHome();
+  check('imported gym on home', (await text('#homebody')).includes('Park Bars'));
 }
 
 // 8. Settings: version near the top

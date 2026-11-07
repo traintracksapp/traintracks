@@ -54,7 +54,24 @@
           "name": "Push Ups",
           "muscles_worked": "Chest (pectoralis major), triceps, anterior deltoids, core",
           "image": "push-ups.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "narrow",
+              "standard",
+              "wide",
+              "diamond"
+            ],
+            "angle": [
+              "flat",
+              "incline",
+              "decline"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "flat"
+          ]
         },
         {
           "id": "leg-lifts",
@@ -68,21 +85,58 @@
           "name": "Sit Ups",
           "muscles_worked": "Rectus abdominis, hip flexors",
           "image": "sit-ups.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "style": [
+              "plain",
+              "weighted",
+              "twisting"
+            ]
+          },
+          "variations_default": [
+            "plain"
+          ]
         },
         {
           "id": "squats",
           "name": "Squats",
           "muscles_worked": "Quadriceps, glutes, hamstrings, core",
           "image": "squats.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "stance": [
+              "narrow",
+              "standard",
+              "wide",
+              "sumo"
+            ],
+            "depth": [
+              "parallel",
+              "deep"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "parallel"
+          ]
         },
         {
           "id": "lunges",
           "name": "Lunges",
           "muscles_worked": "Quadriceps, glutes, hamstrings, balance",
           "image": "lunges.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "direction": [
+              "forward",
+              "reverse",
+              "lateral",
+              "walking"
+            ]
+          },
+          "variations_default": [
+            "forward"
+          ]
         },
         {
           "id": "elbow-planks",
@@ -261,7 +315,23 @@
           "name": "Barbell Squat",
           "muscles_worked": "Quadriceps, glutes, hamstrings, core, back",
           "image": "barbell-squat.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "stance": [
+              "narrow",
+              "standard",
+              "wide",
+              "sumo"
+            ],
+            "depth": [
+              "parallel",
+              "deep"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "parallel"
+          ]
         },
         {
           "id": "deadlift-barbell",
@@ -282,7 +352,23 @@
           "name": "Standing Dumbbell Curl",
           "muscles_worked": "Biceps brachii, brachialis",
           "image": "standing-dumbbell-curl.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "supinated",
+              "hammer",
+              "reverse"
+            ],
+            "arms": [
+              "both",
+              "alternating",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "supinated",
+            "both"
+          ]
         },
         {
           "id": "dumbbell-flys",
@@ -296,7 +382,22 @@
           "name": "Dumbbell Press",
           "muscles_worked": "Chest (pectoralis major), triceps, anterior deltoids",
           "image": "dumbbell-press.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "standard",
+              "narrow",
+              "wide"
+            ],
+            "arms": [
+              "both",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "both"
+          ]
         },
         {
           "id": "dumbbell-incline-press",
@@ -331,7 +432,18 @@
           "name": "Dumbbell Lunges",
           "muscles_worked": "Quadriceps, glutes, hamstrings, balance",
           "image": "dumbbell-lunges.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "direction": [
+              "forward",
+              "reverse",
+              "lateral",
+              "walking"
+            ]
+          },
+          "variations_default": [
+            "forward"
+          ]
         }
       ]
     },
@@ -399,7 +511,22 @@
           "name": "Chest Press",
           "muscles_worked": "Pectoralis major, anterior deltoids, triceps",
           "image": "chest-press.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "standard",
+              "narrow",
+              "wide"
+            ],
+            "arms": [
+              "both",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "both"
+          ]
         },
         {
           "id": "pec-fly-machine",
@@ -413,7 +540,15 @@
           "name": "Lat Pulldown",
           "muscles_worked": "Latissimus dorsi, rhomboids, biceps, rear deltoids",
           "image": "lat-pulldown.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "wide",
+              "narrow",
+              "neutral",
+              "underhand"
+            ]
+          }
         },
         {
           "id": "tricep-pulldown-extension",
@@ -427,28 +562,88 @@
           "name": "Seated Row",
           "muscles_worked": "Lats, rhomboids, middle trapezius, rear deltoids, biceps",
           "image": "seated-row.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "wide",
+              "narrow",
+              "neutral",
+              "underhand"
+            ]
+          }
         },
         {
           "id": "shoulder-press",
           "name": "Shoulder Press",
           "muscles_worked": "Deltoids, triceps",
           "image": "shoulder-press.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "standard",
+              "narrow",
+              "wide"
+            ],
+            "arms": [
+              "both",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "standard",
+            "both"
+          ]
         },
         {
           "id": "bicep-curl",
           "name": "Bicep Curl",
           "muscles_worked": "Biceps brachii",
           "image": "bicep-curl.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "grip": [
+              "supinated",
+              "hammer",
+              "reverse"
+            ],
+            "arms": [
+              "both",
+              "alternating",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "supinated",
+            "both"
+          ]
         },
         {
           "id": "leg-press",
           "name": "Leg Press",
           "muscles_worked": "Quadriceps, glutes, hamstrings",
           "image": "leg-press.jpg",
-          "log_type": "weight"
+          "log_type": "weight",
+          "variations": {
+            "feet": [
+              "high",
+              "mid",
+              "low"
+            ],
+            "stance": [
+              "narrow",
+              "standard",
+              "wide"
+            ],
+            "legs": [
+              "both",
+              "single"
+            ]
+          },
+          "variations_default": [
+            "mid",
+            "standard",
+            "both"
+          ]
         },
         {
           "id": "leg-extension",

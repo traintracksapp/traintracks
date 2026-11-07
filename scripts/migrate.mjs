@@ -9,14 +9,14 @@
  * The optional corrections file is the owner's own (see applyFixups in
  * lib/migrate.js); keep it outside the repo.
  *
- * Converts: workout-log.json (+ CSV), equipment/**\/gym.json and
- * equipment/generic.local.json. Copies gym images. Prints a report of every
- * conversion rule and anything it could not map. Goals, the plan and the
- * Garmin files are converted in later phases.
+ * Converts: workout-log.json (+ CSV), equipment/**\/gym.json,
+ * equipment/generic.local.json, goals.json, profile.json and
+ * suggested-workout.json. Copies gym images. Prints a report of every
+ * conversion rule and anything it could not map.
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { convertLog, convertGym, convertLocalOverrides, applyFixups } from '../lib/migrate.js';
+import { convertLog, convertGym, convertLocalOverrides, applyFixups, convertGoals, convertProfile, convertPlan, v1MachineTypes } from '../lib/migrate.js';
 import { logToJSON, logToCSV } from '../lib/log.js';
 
 const args = process.argv.slice(2);
@@ -56,10 +56,22 @@ if (fixupsPath) {
 write('workout-log.json', logToJSON(r.log));
 write('workout-log.csv', logToCSV(r.log));
 
+// Goals, profile, plan
+const goalNotes = [];
+const maybe = name => (fs.existsSync(path.join(src, name)) ? readJSON(path.join(src, name)) : null);
+const g1 = maybe('goals.json');
+if (g1) { const g = convertGoals(g1); write('goals.json', JSON.stringify(g.goals, null, 2) + '\n'); goalNotes.push(...g.notes); }
+const p1 = maybe('profile.json');
+if (p1) write('profile.json', JSON.stringify(convertProfile(p1), null, 2) + '\n');
+const s1 = maybe('suggested-workout.json');
+if (s1) write('suggested-workout.json', JSON.stringify(convertPlan(s1, v1MachineTypes(gyms.map(g => g.data), local)), null, 2) + '\n');
+for (const f of ['VERSION']) if (fs.existsSync(path.join(src, f))) write(f, fs.readFileSync(path.join(src, f)));
+
 // Report
 console.log(`Source: ${src}\nOutput: ${dst}\n`);
 console.log(`Gyms converted: ${gyms.length}${local ? ' (+ generic.local.json)' : ''}`);
-console.log(`Log entries: ${v1.length} in, ${r.log.length} out\n`);
+console.log(`Log entries: ${v1.length} in, ${r.log.length} out`);
+console.log(`Also converted: ${['goals.json', 'profile.json', 'suggested-workout.json'].filter(f => fs.existsSync(path.join(src, f))).join(', ') || 'nothing else'}${goalNotes.length ? `\n  ${goalNotes.join('\n  ')}` : ''}\n`);
 console.log('Conversions applied (entries per rule):');
 for (const [k, v] of Object.entries(r.counts).sort((a, b) => a[0].localeCompare(b[0]))) console.log(`  ${String(v).padStart(5)}  ${k}`);
 if (fx) {

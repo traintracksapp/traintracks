@@ -1,0 +1,9 @@
+{
+  "week_start": "sat",
+  "hr_zones_bpm": [110, 125, 140, 155, 170],
+  "goals": [
+    { "id": "cardio_days", "label": "Days with cardio", "kind": "days", "source": "log", "filter": "cardio", "target": 3 },
+    { "id": "strength_days", "label": "Days with strength", "kind": "days", "source": "log", "filter": "strength", "target": 2 },
+    { "id": "row_reps", "label": "Seated row reps", "kind": "sum", "source": "log", "field": "reps", "machine_ids": ["r02"], "target": 60 }
+  ]
+}

@@ -4,9 +4,10 @@ import { html, act, setHTML, setText, on, toast, $, confirmDialog, showLoading, 
 import { screen, nav } from './nav.js';
 import { imageUrl, commitLog } from '../data.js';
 import { visibleCount } from '../../lib/gyms.js';
-import { lastSession, removeSession, machineSessions } from '../../lib/log.js';
+import { lastSession, removeSession, machineSessions, garminIdOf } from '../../lib/log.js';
+import { zonesFromBuckets, cleanFloors } from '../../lib/goals.js';
 import { normalizeVariant } from '../../lib/variant.js';
-import { fmtLast, fmtSet, fmtDateFull } from '../../lib/format.js';
+import { fmtLast, fmtSet, fmtDateFull, fmtDuration } from '../../lib/format.js';
 import { localDate } from '../../lib/dates.js';
 import { startLog } from './logform.js';
 
@@ -53,6 +54,22 @@ function renderMachines() {
   hydrateImages(grid);
 }
 
+/** Heart-rate zones for a Garmin-linked session, from the bucket file and the zone floors in goals.json. */
+function zoneRow(sets) {
+  const id = sets.map(garminIdOf).find(Boolean);
+  const row = id && S.buckets[id];
+  const fl = cleanFloors(S.goals && S.goals.hr_zones_bpm);
+  if (row && fl.length) {
+    const z = zonesFromBuckets(row, fl);
+    const parts = z.zones.map((v, i) => `Z${i + 1} ${v > 0 ? fmtDuration(v) : '—'}`);
+    if (z.below > 0) parts.unshift(`below Z1 ${fmtDuration(z.below)}`);
+    return html`<div class="zr">${parts.join(' · ')}${row.hr_avg_bpm ? ` · avg ${row.hr_avg_bpm} bpm` : ''}</div>`;
+  }
+  const f = sets[0] || {};
+  if (![1, 2, 3, 4, 5].some(i => f[`zone${i}_sec`] != null)) return '';
+  return html`<div class="zr">${[1, 2, 3, 4, 5].map(i => `Z${i} ${f[`zone${i}_sec`] != null ? fmtDuration(f[`zone${i}_sec`]) : '—'}`).join(' · ')}</div>`;
+}
+
 const chips = v => (v && v.length ? html`<span class="vchips">${v.map(t => html`<span class="vchip">${t}</span>`)}</span>` : '');
 
 export function renderDetail() {
@@ -66,6 +83,7 @@ export function renderDetail() {
     const v = s.variant.join(';');
     return html`<div class="hi"><div class="hd"><span>${fmtDateFull(s.date)} ${chips(s.variant)}</span><div class="ha"><button class="ib" ${act('edit-session', { date: s.date, v })} title="Edit" aria-label="Edit">✏️</button><button class="ib danger" ${act('del-session', { date: s.date, v })} title="Delete" aria-label="Delete">🗑️</button></div></div>
       ${s.sets.map(x => html`<div class="sr"><span class="sn">Set ${x.set}</span><span class="sv">${fmtSet(x)}</span></div>`)}
+      ${zoneRow(s.sets)}
       ${notes ? html`<div class="hn">“${notes}”</div>` : ''}</div>`;
   }) : html`<div class="empty" style="padding:28px 24px"><div class="icon">📋</div><p>No sessions logged yet.</p></div>`;
   const more = sessions.length > shown.length ? html`<button class="btn ghost" ${act('history-more')}>Show all ${sessions.length} sessions</button>` : '';

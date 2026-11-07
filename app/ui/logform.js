@@ -24,7 +24,7 @@ const key = date => ({ gym_id: S.gym.id, machine_id: S.machine.id, date, variant
 export function startLog(editDate, opts = {}) {
   const today = localDate();
   S.fromPlan = !!opts.fromPlan;
-  S.logVariant = normalizeVariant(opts.variant || []);
+  S.logVariant = normalizeVariant(opts.variant || [], S.machine && S.machine.variations_default);
   S.logDate = editDate || today;
   // Starting "today" when today already has this session opens it for editing.
   const exists = sessionEntries(S.log, key(S.logDate)).length > 0;
@@ -64,7 +64,10 @@ function variantPicker() {
   const groups = variationsOf(S.machine);
   const inGroups = new Set(Object.values(groups).flat().map(cleanTag));
   const extra = S.logVariant.filter(t => !inGroups.has(t));
-  const groupRows = Object.entries(groups).map(([g, tags]) => html`<div class="vg"><span class="vgl">${g}</span>${tags.map(tag => html`<button class="vc ${S.logVariant.includes(cleanTag(tag)) ? 'on' : ''}" ${act('log-var', { g, t: cleanTag(tag) })}>${tag}</button>`)}</div>`);
+  const defaults = (S.machine.variations_default || []).map(cleanTag);
+  // A group with nothing picked shows its default as selected (defaults are never stored).
+  const isOn = (tags, tag) => S.logVariant.includes(tag) || (defaults.includes(tag) && !tags.map(cleanTag).some(x => S.logVariant.includes(x)));
+  const groupRows = Object.entries(groups).map(([g, tags]) => html`<div class="vg"><span class="vgl">${g}</span>${tags.map(tag => html`<button class="vc ${isOn(tags, cleanTag(tag)) ? 'on' : ''}" ${act('log-var', { g, t: cleanTag(tag) })}>${tag}</button>`)}</div>`);
   return html`<div class="fs"><h3>Variation <span class="hl">(optional)</span></h3>
     ${groupRows}
     ${extra.length ? html`<div class="vg">${extra.map(t => html`<button class="vc on" ${act('log-var', { t })}>${t} ×</button>`)}</div>` : ''}
@@ -153,14 +156,14 @@ on('log-var', d => {
   const has = S.logVariant.includes(d.t);
   let v = S.logVariant.filter(x => x !== d.t && !group.includes(x)); // at most one tag per group
   if (!has) v.push(d.t);
-  S.logVariant = normalizeVariant(v);
+  S.logVariant = normalizeVariant(v, S.machine.variations_default);
   variantChanged();
 });
 on('log-var-add', () => {
   const t = cleanTag(($('vtag') || {}).value);
   if (!t) return;
   if (t.includes(';')) { toast('A tag can\'t contain ";"', 'err'); return; }
-  S.logVariant = normalizeVariant([...S.logVariant, t]);
+  S.logVariant = normalizeVariant([...S.logVariant, t], S.machine.variations_default);
   variantChanged();
 });
 on('log-save', save);

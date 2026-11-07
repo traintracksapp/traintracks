@@ -241,3 +241,53 @@ test('applyFixups: no corrections → log unchanged', () => {
   const log = [V2({ reps: -1 })];
   assert.deepEqual(applyFixups(log, null, gyms2).log, log);
 });
+
+// ---- goals, profile, plan ----
+import { convertGoals, convertProfile, convertPlan } from '../lib/migrate.js';
+
+test('convertGoals: keys, units and display', () => {
+  const v1 = { weekStart: 'sat', hrZones: [110, 125, 140, 155, 170], goals: [
+    { id: 'steps', label: 'Steps', kind: 'sum', source: 'wellness', field: 'steps', target: 60000 },
+    { id: 'z', label: 'Under 125', kind: 'sum', source: 'log', hrMax: 125, target: 150 },
+    { id: 'push', label: 'Pushups', kind: 'sum', source: 'log', field: 'reps', machineIds: ['push-ups'], target: 140 },
+    { id: 'plank', label: 'Plank', kind: 'sum', source: 'log', field: 'duration', machineIds: ['elbow-planks'], target: 300, unit: 's' },
+    { id: 'sleep', label: 'Sleep', kind: 'avg', source: 'wellness', field: 'sleep_hours', target: 7.5, unit: 'h' },
+    { id: 'rhr', label: 'RHR', kind: 'avg', source: 'wellness', field: 'resting_hr', target: 55, direction: 'below' },
+    { id: 'zone2', label: 'Zone 2', kind: 'sum', source: 'log', field: 'zone2', target: 30 },
+    { id: 'days', label: 'Cardio days', kind: 'days', source: 'log', filter: 'cardio', target: 4 }
+  ] };
+  const { goals: g, notes } = convertGoals(v1);
+  assert.equal(g.week_start, 'sat');
+  assert.deepEqual(g.hr_zones_bpm, [110, 125, 140, 155, 170]);
+  const by = id => g.goals.find(x => x.id === id);
+  assert.deepEqual(by('steps'), { id: 'steps', label: 'Steps', kind: 'sum', source: 'wellness', field: 'steps', target: 60000 });
+  assert.deepEqual(by('z'), { id: 'z', label: 'Under 125', kind: 'sum', source: 'log', hr_max_bpm: 125, display: 'min', target: 9000 });
+  assert.deepEqual(by('push').machine_ids, ['push-ups']);
+  assert.deepEqual([by('plank').field, by('plank').target, by('plank').display], ['duration_sec', 300, 's']);
+  assert.deepEqual([by('sleep').field, by('sleep').target, by('sleep').display], ['sleep_sec', 27000, 'h']);
+  assert.deepEqual([by('rhr').field, by('rhr').target, by('rhr').direction], ['resting_hr_bpm', 55, 'below']);
+  assert.deepEqual([by('zone2').field, by('zone2').target], ['zone2_sec', 1800]);
+  assert.deepEqual(by('days'), { id: 'days', label: 'Cardio days', kind: 'days', source: 'log', filter: 'cardio', target: 4 });
+  assert.deepEqual(notes, []);
+  assert.deepEqual(convertGoals(null).goals, null);
+});
+
+test('convertProfile: snake_case keys, values kept', () => {
+  assert.deepEqual(convertProfile({ firstName: 'Sam', birthYear: 1985, injuries: 'knee' }), { first_name: 'Sam', birth_year: 1985, injuries: 'knee' });
+  assert.deepEqual(convertProfile(null), {});
+});
+
+test('convertPlan: keys and set units by machine type', () => {
+  const plan = { generatedAt: '2026-10-25T15:16:59Z', coachNote: 'Upper body.', exercises: [
+    { machineId: 'r02', gymId: 'eg', machine: 'Row', sets: [{ set: 1, weight: 60, reps: 15 }], note: 'slow' },
+    { machineId: 'elbow-planks', sets: [{ set: 1, duration: 60 }] },
+    { machineId: 'tm', gymId: 'eg', sets: [{ set: 1, duration: 30, level: 3.3, incline: 4 }] }
+  ] };
+  const p = convertPlan(plan, types);
+  assert.equal(p.generated_at, '2026-10-25T15:16:59Z');
+  assert.equal(p.coach_note, 'Upper body.');
+  assert.deepEqual(p.exercises[0], { machine_id: 'r02', gym_id: 'eg', machine: 'Row', note: 'slow', sets: [{ set: 1, weight_lb: 60, reps: 15 }] });
+  assert.deepEqual(p.exercises[1].sets, [{ set: 1, duration_sec: 60 }]);
+  assert.deepEqual(p.exercises[2].sets, [{ set: 1, duration_sec: 1800, incline_pct: 4, speed_mph: 3.3 }]);
+  assert.equal(convertPlan(null), null);
+});

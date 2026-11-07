@@ -10,9 +10,11 @@
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
 import { loadLog as loadLogAt, commitLog as commitLogFiles } from '../lib/logstore.js';
-import { FILES } from '../lib/config.js';
+import { FILES, CATALOG } from '../lib/config.js';
 import { sortLog } from '../lib/log.js';
-import { applyGenericOverrides, genericOverridesFrom, serialiseGym, GENERIC_ID } from '../lib/gyms.js';
+import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
+import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
+import { convertGym } from '../lib/migrate.js';
 import { S, hasCfg } from './state.js';
 
 export function connect() {
@@ -41,7 +43,7 @@ export async function loadAll(onStatus = () => {}) {
       throw e;
     }
     onStatus('Loading your data…');
-    await Promise.all([loadGyms(), loadLog(), loadProfile(), loadPlan(), loadGoals(), loadVersion()]);
+    await Promise.all([loadGyms(), loadLog(), loadProfile(), loadPlan(), loadGoals(), loadVersion(), loadWellness(), loadBuckets()]);
     S.loaded = true;
   } finally { S.loading = false; }
 }
@@ -102,6 +104,17 @@ export async function loadGoals() {
     S.goals = f ? f.data : null;
     S.sha.goals = f ? f.sha : null;
   } catch (e) { console.warn('goals:', e); S.goals = null; }
+}
+
+/** Garmin outputs are optional and only displayed; a missing or unreadable file just means no data. */
+export async function loadWellness() {
+  try { const f = await repo().getText(FILES.wellness); S.wellness = f ? parseWellnessCSV(f.text) : []; }
+  catch (e) { console.warn('wellness:', e); S.wellness = []; }
+}
+
+export async function loadBuckets() {
+  try { const f = await repo().getText(FILES.buckets); S.buckets = f ? parseBucketsCSV(f.text) : {}; }
+  catch (e) { console.warn('buckets:', e); S.buckets = {}; }
 }
 
 export async function loadVersion() {
@@ -167,3 +180,72 @@ export async function saveGoals(goals) {
   S.sha.goals = await putJSON(FILES.goals, goals, S.sha.goals, 'Update weekly goals');
   S.goals = goals;
 }
+
+/** Remove today's plan file. */
+export async function dismissPlan() {
+  const r = repo();
+  const cur = await r.getText(FILES.plan);
+  if (cur) await r.deleteFile(FILES.plan, cur.sha, 'Dismiss workout plan');
+  S.plan = null; S.sha.plan = null;
+}
+
+// ----------------------------------------------------------------- photos ----
+
+/** Upload a JPEG (base64) as a gym image. Shown from a local copy this session, since raw URLs lag behind. */
+export async function uploadImage(gym, file, base64) {
+  const r = repo();
+  const path = `${gym._path}/images/${file}`;
+  const bytes = Uint8Array.from(atob(base64.replace(/\s/g, '')), c => c.charCodeAt(0));
+  const cur = await r.listDir(`${gym._path}/images`);
+  const existing = cur.find(f => f.name === file);
+  await r.putFile(path, bytes, existing ? existing.sha : null, `Upload image ${file}`);
+  localImages.set(path, URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })));
+}
+
+// ---------------------------------------------------------------- catalog ----
+
+const catalogRaw = p => `https://raw.githubusercontent.com/${CATALOG.owner}/${CATALOG.repo}/${CATALOG.branch}/${p.split('/').map(encodeURIComponent).join('/')}`;
+
+/** The public catalog's index (read-only, no token needed). */
+export async function loadCatalog() {
+  const res = await fetch(catalogRaw('index.json'), { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Could not load the catalog (HTTP ${res.status})`);
+  S.catalog = await res.json();
+  return S.catalog;
+}
+
+/**
+ * Copy a catalog gym (gym.json + photos) into the user's repo. The catalog
+ * is in format version 1, so gym.json is converted. onStatus(message).
+ */
+export async function importCatalogGym(id, onStatus = () => {}) {
+  const r = repo();
+  const c = ((S.catalog && S.catalog.gyms) || []).find(x => x.id === id);
+  if (!c) throw new Error('That gym is not in the catalog');
+  if (id === GENERIC_ID) throw new Error('The common gym comes with the app and is updated with it');
+  const path = gymPathFor(id);
+  onStatus(`Reading ${c.name}…`);
+  const gres = await fetch(catalogRaw(`gyms/${id}/gym.json`), { cache: 'no-store' });
+  if (!gres.ok) throw new Error(`gym.json download failed (HTTP ${gres.status})`);
+  const gym = convertGym(await gres.json());
+  const images = [...new Set(gym.rooms.flatMap(room => room.machines.map(m => m.image).filter(Boolean)))];
+  const have = Object.fromEntries((await r.listDir(`${path}/images`)).map(f => [f.name, f.sha]));
+  for (const [i, file] of images.entries()) {
+    onStatus(`Importing ${c.name}…\nphoto ${i + 1} of ${images.length}`);
+    const res = await fetch(catalogRaw(`gyms/${id}/images/${file}`));
+    if (!res.ok) { console.warn('catalog image missing:', file); continue; }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    await r.putFile(`${path}/images/${file}`, bytes, have[file] || null, `Import image ${file}`);
+    localImages.set(`${path}/images/${file}`, URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' })));
+  }
+  onStatus(`Importing ${c.name}…\nsaving gym`);
+  gym.source = `${CATALOG.owner}/${CATALOG.repo}@${S.catalog.version || 'main'}`;
+  delete gym.removed;
+  const p = `${path}/gym.json`;
+  const cur = await r.getText(p);
+  S.sha.gym[p] = await r.putFile(p, json(serialiseGym(gym)), cur ? cur.sha : null, `Import gym: ${gym.name}`);
+  await loadGyms();
+}
+
+/** Start the Garmin workflow (needs Actions: read & write on the token). */
+export const runGarminNow = () => repo().dispatch('garmin.yml', {});
