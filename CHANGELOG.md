@@ -14,6 +14,9 @@ A rewrite of TrainTracks to spec 1.3 (`docs/SPEC.md`).
 - Garmin pipelines in format version 2: one gated workflow; tokens in the new JSON format only (older ones are rejected with instructions); heart-rate buckets in seconds; wellness columns in seconds with units in their names; Garmin rows posted to the log exactly as the app writes it; new `body-composition.csv` and `blood-pressure.csv` from a Garmin Index scale and blood-pressure monitor.
 - The converter also handles the Garmin files and settings (zones, corrections, mapping).
 - App updates never overwrite your Garmin settings (`zones.json`, `corrections.json`, `mapping.json`).
+- In-app updater: shows the changelog, then copies changed app files in one commit (pinned to the template's commit; never touches your data or Garmin settings).
+- Optional Cloudflare Worker (`worker/worker.js`): secret in an Authorization header, plans sent as a POST body, log writes as one commit with the CSV built from the JSON, one Garmin workflow to trigger.
+- Guides rewritten for this version: setup, coach (reads CSVs by column name; plans can carry variations), Garmin, Worker.
 - Browser smoke test (`tests/e2e/run.mjs`), also run in CI.
 - A log save is one commit (JSON + CSV together), reloading and re-applying if another writer got there first.
 

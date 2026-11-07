@@ -16,7 +16,9 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
   const calls = [];
   const hooks = { beforePatchRef: null, failNext: null };
 
-  const blob = text => { const s = id('b'); blobs.set(s, text); return s; };
+  // Like git, a blob's sha comes from its content, so the same file has the same sha in any repo.
+  const hash = s => { let h1 = 0x811c9dc5, h2 = 0x01000193; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 ^ c, 2246822519) >>> 0; } return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0'); };
+  const blob = text => { const s = `b${hash(text)}`; blobs.set(s, text); return s; };
   const mkTree = m => { const s = id('t'); trees.set(s, m); return s; };
   const mkCommit = (tree, parents, message) => { const s = id('c'); commits.set(s, { tree, parents, message }); return s; };
 

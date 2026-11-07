@@ -10,7 +10,7 @@
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
 import { loadLog as loadLogAt, commitLog as commitLogFiles } from '../lib/logstore.js';
-import { FILES, CATALOG } from '../lib/config.js';
+import { FILES, CATALOG, TEMPLATE } from '../lib/config.js';
 import { sortLog } from '../lib/log.js';
 import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
 import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
@@ -249,3 +249,21 @@ export async function importCatalogGym(id, onStatus = () => {}) {
 
 /** Start the Garmin workflow (needs Actions: read & write on the token). */
 export const runGarminNow = () => repo().dispatch('garmin.yml', {});
+
+// ---------------------------------------------------------------- updater ----
+import { checkForUpdate, applyUpdate, templateRepo } from '../lib/updater.js';
+
+/** Compare this repo with the template: { plan, templateVersion, changelog }. */
+export const checkTemplate = () => checkForUpdate(templateRepo(), repo(), S.version);
+
+/** Copy the changed app files in one commit. Returns how many files. */
+export function applyTemplate(check, onStatus) {
+  // Raw downloads at the pinned template commit: exact, and not subject to the
+  // 60-requests-an-hour limit on unauthenticated API calls.
+  const download = async p => {
+    const res = await fetch(`https://raw.githubusercontent.com/${TEMPLATE.owner}/${TEMPLATE.repo}/${check.templateHead}/${p.split('/').map(encodeURIComponent).join('/')}`);
+    if (!res.ok) throw new Error(`Could not download ${p} (HTTP ${res.status})`);
+    return new Uint8Array(await res.arrayBuffer());
+  };
+  return applyUpdate(templateRepo(), repo(), check, onStatus, { download });
+}

@@ -307,6 +307,11 @@ await page.click('#s-home [data-act="nav"][data-to="settings"]');
 await shot('settings');
 const top = await text('.vertop');
 check('settings shows the version at the top', /TrainTracks v\d/.test(top), top);
+// The template is served by the same fake here, so it is identical: "up to date".
+await page.click('[data-act="update-check"]');
+await page.waitForFunction(() => /up to date|failed/i.test(document.getElementById('updstatus').textContent + document.getElementById('toast').textContent), null, { timeout: 15000 });
+check('update check runs', /up to date/i.test(await text('#updstatus')), await text('#toast'));
+check('Garmin section present', (await text('#settingsbody')).includes('Run the Garmin sync now'));
 
 await ctx.close();
 

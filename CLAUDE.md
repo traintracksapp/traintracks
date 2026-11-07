@@ -40,6 +40,13 @@ a fresh history (one-time force-push, confirmed with the owner first).
   the session; changing the date moves it. Unknown entry fields survive edits.
 - `workout-log.csv` is read by header name, never by position.
 
+## Where things are
+
+- `index.html`, `app/` (screens, state, the data layer in `app/data.js`), `lib/` (pure, tested logic)
+- `pipelines/garmin/` (Python; `.github/workflows/garmin.yml`), `worker/worker.js` (optional relay)
+- `scripts/migrate.mjs` (format version 1 → 2), `tests/` (unit, `tests/e2e/run.mjs` browser test)
+- `docs/`: SETUP, COACH, GARMIN, WORKER, DATA-FORMAT, DECISIONS, SPEC
+
 ## Working here
 
 - `npm test` runs the JavaScript tests (node:test); `npm run test:py` the Python ones.

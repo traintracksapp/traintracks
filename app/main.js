@@ -15,6 +15,7 @@ import './ui/goalsedit.js';
 import './ui/equipment.js';
 import './ui/profile.js';
 import { applyTheme } from './ui/settings.js';
+import './ui/updates.js';
 import { STORAGE, APP_VERSION } from '../lib/config.js';
 
 wireDelegation();
