@@ -31,7 +31,7 @@ const goals = [
   { id: 'steps', label: 'Steps', kind: 'sum', source: 'wellness', field: 'steps', target: 70000 },
   { id: 'cardioDays', label: 'Cardio days', kind: 'days', source: 'log', filter: 'cardio', target: 4 },
   { id: 'strengthDays', label: 'Strength days', kind: 'days', source: 'log', filter: 'strength', target: 3 },
-  { id: 'zone2', label: 'Zone 2', kind: 'sum', source: 'log', field: 'zone2_sec', target: 2700, display: 'min' },
+  { id: 'zone2', label: 'Zone 2', kind: 'sum', source: 'log', field: 'zone2_min', target: 2700, display: 'min' },
   { id: 'pushups', label: 'Pushups', kind: 'sum', source: 'log', field: 'reps', machine_ids: ['push-ups'], target: 140 },
   { id: 'plank', label: 'Plank', kind: 'sum', source: 'log', field: 'duration_sec', machine_ids: ['elbow-planks'], target: 315, display: 's' },
   { id: 'sleep', label: 'Sleep', kind: 'avg', source: 'wellness', field: 'sleep_sec', target: 25560, display: 'h' },
@@ -43,10 +43,10 @@ const log = [
   E({ machine_id: 'elbow-planks', machine: 'Elbow Planks', date: '2026-09-29', duration_sec: 30 }),
   E({ machine_id: 'push-ups', machine: 'Push Ups', date: '2026-09-28', reps: 20 }),
   E({ machine_id: 'push-ups', machine: 'Push Ups', date: '2026-09-28', reps: 20 }),
-  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-28', duration_sec: 6360, zone1_sec: 6000, zone2_sec: 360 }),
-  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-27', duration_sec: 3000, zone1_sec: 2400, zone2_sec: 600 }),
+  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-28', duration_sec: 6360, zone1_min: 100, zone2_min: 6 }),
+  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-27', duration_sec: 3000, zone1_min: 40, zone2_min: 10 }),
   E({ gym_id: 'eg', machine_id: 'r03', machine: 'Chest Press', date: '2026-09-26', weight_lb: 100, reps: 10 }),
-  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-25', duration_sec: 3000, zone1_sec: 2400, zone2_sec: 600 }), // prior week
+  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-25', duration_sec: 3000, zone1_min: 40, zone2_min: 10 }), // prior week
   E({ machine_id: 'push-ups', machine: 'Push Ups', date: '2026-09-25', reps: 99 })                                     // prior week
 ];
 const wellness = [
@@ -223,7 +223,7 @@ const hrGoals = [
 ];
 const hrLog = [
   E({ machine_id: 'run', machine: 'Run', date: '2026-09-28', duration_sec: 1800, notes: 'Evening run (Garmin 24000000002; 3 mi).' }),
-  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-27', set: 1, duration_sec: 3600, zone1_sec: 3000, zone2_sec: 600, garmin_id: '24000000001' }),
+  E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-27', set: 1, duration_sec: 3600, zone1_min: 50, zone2_min: 10, garmin_id: '24000000001' }),
   E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-27', set: 2, duration_sec: 60, notes: 'second set, same activity: Garmin 24000000001' }),
   E({ gym_id: 'eg', machine_id: 'tm', machine: 'Treadmill', date: '2026-09-26', duration_sec: 1800, zone2_sec: 1500 }),
   E({ machine_id: 'walk', machine: 'Walk', date: '2026-09-25', duration_sec: 1200, notes: 'Garmin 24000000004' })
@@ -253,6 +253,14 @@ test('hr-range goal: no bucket file → 0 with a hint, typed-zone goals unaffect
   assert.equal(o.results.find(r => r.id === 'zone2').value, 2100);
 });
 test('typed-zone goal still sums the log fields when buckets are present', () => assert.equal(hrBy('zone2').value, 2100));
+test('typed-zone goal: zone2_min and zone2_sec mean the same, in seconds; 0.2.0 rows (zone2_sec) still count', () => {
+  const g = [{ id: 'a', kind: 'sum', source: 'log', field: 'zone2_min', target: 2700, display: 'min' }];
+  const v = R.computeGoals(g, { log: hrLog, buckets: B, gyms, week_start: 'sat', today: '2026-09-29', offset: 0 }).results[0].value;
+  assert.equal(v, 2100);
+  assert.equal(R.logFieldValue({ zone2_min: 19.72 }, 'zone2_min'), 1183.2);
+  assert.equal(R.logFieldValue({ zone2_sec: 1183 }, 'zone2_min'), 1183);
+  assert.equal(R.logFieldValue({ reps: 12 }, 'reps'), 12);
+});
 
 test('cleanGoalsConfig: trims labels, numbers targets, checks zone floors', () => {
   const c = R.cleanGoalsConfig({ goals: [{ label: '  Steps ', target: '70000' }, { label: '' }], hr_zones_bpm: [105, 120, null] });

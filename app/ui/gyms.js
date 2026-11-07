@@ -4,10 +4,10 @@ import { html, act, setHTML, setText, on, toast, $, confirmDialog, showLoading, 
 import { screen, nav } from './nav.js';
 import { imageUrl, commitLog } from '../data.js';
 import { visibleCount } from '../../lib/gyms.js';
-import { lastSession, removeSession, machineSessions, garminIdOf, moveSession } from '../../lib/log.js';
+import { lastSession, removeSession, machineSessions, garminIdOf, moveSession, zoneSeconds } from '../../lib/log.js';
 import { zonesFromBuckets, cleanFloors } from '../../lib/goals.js';
 import { normalizeVariant } from '../../lib/variant.js';
-import { fmtLast, fmtSet, fmtDateFull, fmtDuration } from '../../lib/format.js';
+import { fmtLast, fmtSet, fmtDateFull, fmtClock } from '../../lib/format.js';
 import { localDate } from '../../lib/dates.js';
 import { startLog } from './logform.js';
 
@@ -61,13 +61,14 @@ function zoneRow(sets) {
   const fl = cleanFloors(S.goals && S.goals.hr_zones_bpm);
   if (row && fl.length) {
     const z = zonesFromBuckets(row, fl);
-    const parts = z.zones.map((v, i) => `Z${i + 1} ${v > 0 ? fmtDuration(v) : '—'}`);
-    if (z.below > 0) parts.unshift(`below Z1 ${fmtDuration(z.below)}`);
+    const parts = z.zones.map((v, i) => `Z${i + 1} ${v > 0 ? fmtClock(v) : '—'}`);
+    if (z.below > 0) parts.unshift(`below Z1 ${fmtClock(z.below)}`);
     return html`<div class="zr">${parts.join(' · ')}${row.hr_avg_bpm ? ` · avg ${row.hr_avg_bpm} bpm` : ''}</div>`;
   }
   const f = sets[0] || {};
-  if (![1, 2, 3, 4, 5].some(i => f[`zone${i}_sec`] != null)) return '';
-  return html`<div class="zr">${[1, 2, 3, 4, 5].map(i => `Z${i} ${f[`zone${i}_sec`] != null ? fmtDuration(f[`zone${i}_sec`]) : '—'}`).join(' · ')}</div>`;
+  const zs = [1, 2, 3, 4, 5].map(i => zoneSeconds(f, i));
+  if (!zs.some(v => v != null)) return '';
+  return html`<div class="zr">${zs.map((v, i) => `Z${i + 1} ${v != null ? fmtClock(v) : '—'}`).join(' · ')}</div>`;
 }
 
 const chips = v => (v && v.length ? html`<span class="vchips">${v.map(t => html`<span class="vchip">${t}</span>`)}</span>` : '');

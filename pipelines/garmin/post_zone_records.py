@@ -4,7 +4,7 @@ post_zone_records.py — add one workout-log row per new Garmin cardio activity.
 
 For every activity in cardio-minutes.csv that is not yet in the log, this
 writes a cardio entry (duration_sec, distance_mi, hr_avg_bpm) linked to the
-activity by `garmin_id`, plus Karvonen zone time in zone1_sec..zone5_sec as a
+activity by `garmin_id`, plus Karvonen zone time in zone1_min..zone5_min as a
 COMPATIBILITY copy for readers of workout-log.csv. The app ignores those
 numbers for linked rows and reads cardio-buckets.csv instead (zones are a
 view, not data — see docs/DECISIONS.md). Format version 2.
@@ -74,7 +74,7 @@ OTHER_CARDIO = "other-cardio"
 NEVER_POST = {"strength_training"}
 NAME_SUFFIXES = ("Cycling", "Running", "Walking", "Hiking", "Ride", "Run", "Walk")
 
-from logfmt import new_id, to_csv, to_json  # noqa: E402
+from logfmt import new_id, round2, to_csv, to_json  # noqa: E402
 
 
 def garmin_id_of(e: dict) -> str | None:
@@ -136,7 +136,11 @@ def build_note(meta, aid, word, dist, elev, zones, max_minute_hr, rhr, hrmax):
                 n = n[: -len(suf)].strip()
                 break
         prefix = n
-    label = f"{prefix} {word}".strip()
+    # "Park Loop Jog" + "jog" → "Park Loop Jog", not "Park Loop Jog jog".
+    if prefix and word and prefix.lower().split()[-len(word.split()):] == word.lower().split():
+        label = prefix
+    else:
+        label = f"{prefix} {word}".strip()
     label = label[0].upper() + label[1:] if label else word.capitalize()
     parts = [f"Garmin {aid}"]
     if dist:
@@ -367,7 +371,7 @@ def plan_entries(cardio_rows, log_entries, garmin_meta, mapping, rhr, hrmax, sin
         for i, z in enumerate(zones, 1):
             v = sec_or_none(z)
             if v is not None:
-                entry[f"zone{i}_sec"] = v
+                entry[f"zone{i}_min"] = round2(v / 60)  # minutes, 2 decimals (docs/DECISIONS.md)
         posted.append((aid, atype, entry, zones, duration))
     return posted, skipped
 

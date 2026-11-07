@@ -21,6 +21,7 @@ saw only the code rediscovered a deliberate decision as a bug.
   interchangeable (the three planks) are separate machines.
 - **One convention everywhere** (`docs/DATA-FORMAT.md`): snake_case names, every number in one unit named by its suffix (`_sec`, `_mi`, `_lb`, `_bpm`...), in every data file. The old
   `duration`/`level` fields changed meaning by machine type.
+- **Durations stay in seconds, with two readability exceptions** (owner's decision, 7 Nov 2026). Seconds are exact for planks and Garmin, and avoid lossy decimals (28:27 is 28.45 min). Because seconds are hard to read in a spreadsheet: the CSV also carries a computed `duration_min`, and the log's HR-zone fields are stored as **minutes with 2 decimals** (`zone2_min`). Zone time is only ever read by people (the app computes zones from `cardio-buckets.csv`), so it is stored the way it is read. Goal targets stay in seconds; a goal on `zone2_min` sums it as seconds.
 - **Negative weight means assistance** (assisted pull-up/dip machines). Kept as a negative number so ordering still works: −85 is harder than −100, and the maximum is the best set. The app shows it as assistance rather than rejecting it.
 - **The CSV is an export read by header name**, with standard quoting. Google
   Sheets reads it with `IMPORTDATA`.

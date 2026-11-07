@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1 (7 Nov 2026)
+
+**Spreadsheet users: the CSV columns changed.** `workout-log.csv` has a new `duration_min` column right after `duration_sec`, and the zone columns are now `zone1_min` … `zone5_min` (minutes) instead of `zone1_sec` … `zone5_sec`. Update formulas that refer to them by name or position.
+
+- Heart-rate zone time on log rows is stored in minutes with 2 decimals (`zone2_min`: 104 s → 1.73). The Garmin Action writes minutes from now on; rows from 0.2.0 are still read and exported in minutes. To convert them in place, run `node scripts/zones-to-minutes.mjs <your-repo> <output-folder>` and commit the files it writes.
+- `workout-log.csv` gets a computed `duration_min` (minutes, 2 decimals). The JSON keeps `duration_sec`.
+- Machine history shows zone times as m:ss everywhere ("Z3 9:00", not "Z3 9").
+- Garmin notes no longer repeat the activity word ("Park Loop Jog", not "Park Loop Jog jog").
+- Goals on a zone field accept both `zone2_min` and the older `zone2_sec`.
+
 ## 0.2.0 (7 Nov 2026)
 
 A rewrite of TrainTracks to spec 1.3 (`docs/SPEC.md`).

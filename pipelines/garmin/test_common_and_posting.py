@@ -61,6 +61,9 @@ SAMPLE_LOG = [
      "weight_lb": -50, "reps": 10, "zone1_sec": 1359, "future_field": {"x": [1.0, 2.5]}},
     {"id": "a3", "date": "2026-11-03", "time": "07:00:00", "machine_id": "walk", "machine": "Walk", "set": 1, "duration_sec": 2400.0,
      "distance_mi": 2.1, "speed_mph": 3.25, "hr_avg_bpm": 110, "garmin_id": "24609293314"},
+    {"id": "a4", "date": "2026-11-02", "time": "10:31:00", "machine_id": "jog", "machine": "Jog", "set": 1, "duration_sec": 1707,
+     "distance_mi": 2.07, "hr_avg_bpm": 129, "garmin_id": "24000000077", "notes": "x",
+     "zone1_min": 1.73, "zone2_min": 19.72, "zone3_min": 5, "zone4_min": 1, "zone5_min": 1},
 ]
 
 
@@ -73,10 +76,12 @@ class LogFormatContract(unittest.TestCase):
 
     def test_csv_rows(self):
         got = L.to_csv(SAMPLE_LOG).split("\n")
-        self.assertEqual(got[1], 'a1,2026-11-05,10:00:00,generic,"Home, Inc",,R,push-ups,"Push ""Ups""",incline; wide,1,,30,,,,,,,123456789,,,,,,"line')
+        self.assertEqual(got[1], 'a1,2026-11-05,10:00:00,generic,"Home, Inc",,R,push-ups,"Push ""Ups""",incline; wide,1,,30,,,,,,,,123456789,,,,,,"line')
         self.assertEqual(got[2], 'break, comma"')
         self.assertTrue(got[3].startswith("a2,2026-11-04,,,G — gym ✓,,R,m1,M,,2,-50,10,"))
-        self.assertIn(",2400,2.1,3.25,", got[4])
+        self.assertTrue(got[3].endswith(",22.65,,,,,"))   # zone1_sec 1359 (rows before 0.2.1) → 22.65 min
+        self.assertIn(",2400,40,2.1,3.25,", got[4])        # duration_sec, then duration_min
+        self.assertEqual(got[5], "a4,2026-11-02,10:31:00,,,,,jog,Jog,,1,,,1707,28.45,2.07,,,,129,24000000077,1.73,19.72,5,1,1,x")
         self.assertEqual(got[-1], "")
 
     def test_json_whole_floats_written_as_ints(self):
@@ -93,6 +98,18 @@ class LogFormatContract(unittest.TestCase):
         out = json.loads(js.stdout)
         self.assertEqual(out["csv"], L.to_csv(SAMPLE_LOG))
         self.assertEqual(out["json"], L.to_json(SAMPLE_LOG))
+
+    def test_minutes_round_like_javascript(self):
+        if not shutil.which("node"):
+            self.skipTest("node not available")
+        secs = list(range(0, 20001)) + [0.5, 1.5, 59.7, 104.4, 1706.6]
+        script = ("const v = JSON.parse(process.argv[1]); import('./lib/log.js').then(m =>"
+                  " process.stdout.write(JSON.stringify(v.map(m.minFromSec))))")
+        js = subprocess.run(["node", "-e", script, "--", json.dumps(secs)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(js.returncode, 0, js.stderr)
+        self.assertEqual(json.loads(js.stdout), [L.min_from_sec(x) for x in secs])
+        self.assertEqual(L.min_from_sec(104), 1.73)
+        self.assertIsNone(L.min_from_sec(""))
 
     def test_new_id_shape(self):
         a, b = L.new_id(), L.new_id()
@@ -130,8 +147,9 @@ class Posting(unittest.TestCase):
         self.assertEqual((e["date"], e["time"]), ("2026-11-05", "07:00:00"))
         self.assertEqual((e["duration_sec"], e["distance_mi"], e["hr_avg_bpm"]), (120, 0.1, 111))
         self.assertEqual(e["variant"], [])
-        self.assertEqual(e["zone1_sec"], 120)        # 110 and 112 bpm are both zone 1 (floor 107)
-        self.assertNotIn("zone2_sec", e)             # zones with no time are left out
+        self.assertEqual(e["zone1_min"], 2)          # 110 and 112 bpm are both zone 1 (floor 107); stored in minutes
+        self.assertNotIn("zone2_min", e)             # zones with no time are left out
+        self.assertFalse(any(k.endswith("_sec") and k.startswith("zone") for k in e))
         self.assertTrue(e["id"].startswith("e"))
         self.assertIn("Garmin 24000000001", e["notes"])
         self.assertTrue(e["notes"].startswith("Park walk"))
@@ -253,6 +271,17 @@ class IndoorRouting(unittest.TestCase):
         e, _ = self.post(A("other"), mapping=mapping)
         self.assertEqual(e["machine_id"], "jog1")
         self.assertNotIn("move it", e["notes"])
+
+    def test_note_does_not_repeat_the_word(self):
+        z = [60, 0, 0, 0, 0]
+        n = P.build_note({"name": "Park Loop Jog"}, "24000000077", "jog", 2.07, 62, z, 120, 46, 168)
+        self.assertTrue(n.startswith("Park Loop Jog (Garmin 24000000077; 2.07 mi; +62 ft)."), n)
+        n = P.build_note({"name": "Park Walking"}, "1", "walk", None, None, z, 100, 46, 168)
+        self.assertTrue(n.startswith("Park walk (Garmin 1)."), n)
+        n = P.build_note({"name": "Joggers Loop"}, "1", "jog", None, None, z, 100, 46, 168)
+        self.assertTrue(n.startswith("Joggers Loop jog ("), n)
+        n = P.build_note(None, "1", "jog", None, None, z, 100, 46, 168)
+        self.assertTrue(n.startswith("Jog (Garmin 1)."), n)
 
     def test_swims_post_outdoors(self):
         e, _ = self.post(A("lap_swimming"))

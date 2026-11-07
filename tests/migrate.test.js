@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snake, convertGym, convertLocalOverrides, convertEntry, convertLog, v1MachineTypes, applyFixups } from '../lib/migrate.js';
+import { snake, convertGym, convertLocalOverrides, convertEntry, convertLog, v1MachineTypes, applyFixups, zonesToMinutes, zoneGoalsToMinutes } from '../lib/migrate.js';
 import { LOG_COLUMNS } from '../lib/log.js';
 
 // Version 1 fixtures (made-up gyms and ids).
@@ -106,13 +106,38 @@ test('pace: hand-logged level is speed (LogTrim labelled it MPH); Garmin-linked 
   assert.equal(g.garmin_id, '123456789');
 });
 
-test('zones: minutes → whole seconds', () => {
-  const e = conv({ gymId: 'generic', machineId: 'elliptical', duration: 32.42, zone1: 1.97, zone2: 25.4, zone3: 4, zone4: 1, zone5: null, garminId: '1' });
-  assert.equal(e.zone1_sec, 118);
-  assert.equal(e.zone2_sec, 1524);
-  assert.equal(e.zone3_sec, 240);
-  assert.equal(e.zone4_sec, 60);
-  assert.ok(!('zone5_sec' in e));
+test('zones: version 1 minutes → zone{i}_min, 2 decimals', () => {
+  const e = conv({ gymId: 'generic', machineId: 'elliptical', duration: 32.42, zone1: 1.966, zone2: 25.4, zone3: 4, zone4: 1, zone5: null, garminId: '1' });
+  assert.equal(e.zone1_min, 1.97);
+  assert.equal(e.zone2_min, 25.4);
+  assert.equal(e.zone3_min, 4);
+  assert.equal(e.zone4_min, 1);
+  assert.ok(!('zone5_min' in e));
+  assert.ok(!Object.keys(e).some(k => /^zone\d_sec$/.test(k)));
+});
+
+test('zonesToMinutes: 0.2.0 rows get zone{i}_min in place, other fields and order kept', () => {
+  const log = [
+    { id: 'a', date: '2026-11-07', machine_id: 'jog', duration_sec: 1707, garmin_id: '24000000077', notes: 'n', zone1_sec: 104, zone2_sec: 1183, zone3_sec: 300, zone4_sec: 60, zone5_sec: 60, future: { x: 1 } },
+    { id: 'b', date: '2026-11-06', machine_id: 'push-ups', reps: 20 },
+    { id: 'c', date: '2026-11-05', zone1_min: 2, zone1_sec: 999 }
+  ];
+  const r = zonesToMinutes(log);
+  assert.equal(r.changed, 2);
+  assert.deepEqual(Object.keys(r.log[0]), ['id', 'date', 'machine_id', 'duration_sec', 'garmin_id', 'notes', 'zone1_min', 'zone2_min', 'zone3_min', 'zone4_min', 'zone5_min', 'future']);
+  assert.deepEqual([1, 2, 3, 4, 5].map(i => r.log[0][`zone${i}_min`]), [1.73, 19.72, 5, 1, 1]);
+  assert.deepEqual(r.log[0].future, { x: 1 });
+  assert.strictEqual(r.log[1], log[1]);
+  assert.deepEqual(r.log[2], { id: 'c', date: '2026-11-05', zone1_min: 2 });
+  assert.equal(zonesToMinutes(r.log).changed, 0);
+});
+
+test('zoneGoalsToMinutes: sum goals on zone{i}_sec move to zone{i}_min, target unchanged', () => {
+  const g = { week_start: 'mon', goals: [{ id: 'z2', kind: 'sum', source: 'log', field: 'zone2_sec', target: 2700, display: 'min' }, { id: 's', field: 'steps' }] };
+  const r = zoneGoalsToMinutes(g);
+  assert.equal(r.changed, 1);
+  assert.deepEqual(r.goals.goals[0], { id: 'z2', kind: 'sum', source: 'log', field: 'zone2_min', target: 2700, display: 'min' });
+  assert.deepEqual(r.goals.goals[1], { id: 's', field: 'steps' });
 });
 
 test('machines only in generic.local.json are found (e.g. a user-added Jog)', () => {
@@ -266,7 +291,7 @@ test('convertGoals: keys, units and display', () => {
   assert.deepEqual([by('plank').field, by('plank').target, by('plank').display], ['duration_sec', 300, 's']);
   assert.deepEqual([by('sleep').field, by('sleep').target, by('sleep').display], ['sleep_sec', 27000, 'h']);
   assert.deepEqual([by('rhr').field, by('rhr').target, by('rhr').direction], ['resting_hr_bpm', 55, 'below']);
-  assert.deepEqual([by('zone2').field, by('zone2').target], ['zone2_sec', 1800]);
+  assert.deepEqual([by('zone2').field, by('zone2').target], ['zone2_min', 1800]);
   assert.deepEqual(by('days'), { id: 'days', label: 'Cardio days', kind: 'days', source: 'log', filter: 'cardio', target: 4 });
   assert.deepEqual(notes, []);
   assert.deepEqual(convertGoals(null).goals, null);

@@ -14,7 +14,7 @@ as "32:25", 25560 seconds of sleep as "7.1 h").
 
 | Kind | Stored as | Name ends in | Examples |
 |---|---|---|---|
-| Duration | whole **seconds** | `_sec` | `duration_sec`, `sleep_sec`, `zone2_sec` |
+| Duration | whole **seconds** | `_sec` | `duration_sec`, `sleep_sec`, `hr70_74_sec` |
 | Distance | miles | `_mi` | `distance_mi` |
 | Weight / mass | pounds | `_lb` | `weight_lb`, `muscle_mass_lb` |
 | Speed | miles per hour | `_mph` | `speed_mph` |
@@ -23,6 +23,7 @@ as "32:25", 25560 seconds of sleep as "7.1 h").
 | Percentage | 0–100 | `_pct` | `incline_pct`, `body_fat_pct` |
 | Blood pressure | mmHg | `_mmhg` | `systolic_mmhg` |
 | Energy | kilocalories | `_kcal` | `active_kcal` |
+| Heart-rate zone time on log rows | **minutes**, 2 decimals (the one exception) | `_min` | `zone2_min` |
 | Counts and unitless scores | plain number | (no suffix) | `reps`, `steps`, `level`, `sleep_score` |
 | Date | `YYYY-MM-DD`, local | `date` / `_date` | `date` |
 | Time of day | `HH:MM:SS`, 24-hour, local | `time` / `_time` | `time` |
@@ -55,13 +56,14 @@ the same commit on every save and is never edited by hand.
 | `weight_lb` | number | Weight lifted. **Negative = assistance** on an assisted machine (e.g. an assisted pull-up's counterweight): −100 is easier than −85, so higher is still harder and "best" is still the maximum. |
 | `reps` | integer | Repetitions. |
 | `duration_sec` | integer | Duration, for every kind of timed exercise (planks, classes, cardio). |
+| `duration_min` | number | **CSV only**, computed from `duration_sec` on export: minutes to 2 decimals (1707 → 28.45). Never stored in the JSON. |
 | `distance_mi` | number | Distance. |
 | `speed_mph` | number | Treadmill speed. |
 | `level` | number | Machine resistance/level (elliptical, bike), when recorded. |
 | `incline_pct` | number | Treadmill incline. |
 | `hr_avg_bpm` | integer | Average heart rate. |
 | `garmin_id` | string | Garmin activity id when the row is linked to one. |
-| `zone1_sec` … `zone5_sec` | integer | Time per HR zone. Compatibility copy on Garmin-posted rows only; the app computes zones from `cardio-buckets.csv`. May be dropped later. |
+| `zone1_min` … `zone5_min` | number | Time per HR zone in **minutes, 2 decimals** (104 s → 1.73), a deliberate exception to "durations in seconds" (see `docs/DECISIONS.md`). Garmin-posted rows only; the app computes its zone display from `cardio-buckets.csv`. Rows written by 0.2.0 had `zone1_sec` … `zone5_sec`; readers still accept them and the CSV exports them in minutes. |
 | `notes` | string | Free text. Always the last CSV column. |
 | `migrated_from` | string | JSON only, optional. Where a row was before a migration correction moved it to another machine, e.g. `Pullups @ Old Park (m123)`. |
 
@@ -85,7 +87,7 @@ Which fields each kind of machine uses:
 ### CSV layout
 
 ```
-id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,reps,duration_sec,distance_mi,speed_mph,level,incline_pct,hr_avg_bpm,garmin_id,zone1_sec,zone2_sec,zone3_sec,zone4_sec,zone5_sec,notes
+id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,reps,duration_sec,duration_min,distance_mi,speed_mph,level,incline_pct,hr_avg_bpm,garmin_id,zone1_min,zone2_min,zone3_min,zone4_min,zone5_min,notes
 ```
 
 - `variant` tags are joined with `; ` (e.g. `incline; wide`).
@@ -96,9 +98,18 @@ id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,re
 Example rows:
 
 ```
-k3f9a2,2026-11-06,11:15:34,generic,Common Machines,bodyweight-no-equipment,Bodyweight — No Equipment,push-ups,Push Ups,incline; wide,1,,20,,,,,,,,,,,,,
-h7c2d1,2026-11-06,07:30:00,generic,Common Machines,cardio,Cardio,elliptical,Elliptical,,1,,,1945,,,,,126,12345678901,118,1524,240,60,,"Hotel gym elliptical (Garmin 12345678901; 32.4 min). Felt easy, legs fresh."
+k3f9a2,2026-11-06,11:15:34,generic,Common Machines,bodyweight-no-equipment,Bodyweight — No Equipment,push-ups,Push Ups,incline; wide,1,,20,,,,,,,,,,,,,,
+h7c2d1,2026-11-06,07:30:00,generic,Common Machines,cardio,Cardio,elliptical,Elliptical,,1,,,1945,32.42,,,,,126,12345678901,1.97,25.4,4,1,,"Hotel gym elliptical (Garmin 12345678901; 32.4 min). Felt easy, legs fresh."
 ```
+
+### Changed in 0.2.1
+
+- `duration_min` added to the CSV (computed, after `duration_sec`).
+- Zone columns are now `zone1_min` … `zone5_min` (minutes, 2 decimals) instead of
+  `zone1_sec` … `zone5_sec`. Existing logs are converted once with
+  `node scripts/zones-to-minutes.mjs <repo> <output>`; until then the app and the
+  Garmin Action read the old fields and export them in minutes.
+- Spreadsheet formulas that use these columns need updating.
 
 ## Other files under the same conventions
 
@@ -141,7 +152,7 @@ Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
 | `level` on a machine that no longer exists in any gym | `level`, unchanged and reported: early rows used it for pace (min/mi) or distance, so the owner decides |
 | negative `weight` | kept (assistance, see `weight_lb`) |
 | other negative numbers | kept as they are and reported |
-| `zone1` … `zone5` (minutes) | `zone1_sec` … `zone5_sec` = minutes × 60, rounded |
+| `zone1` … `zone5` (minutes) | `zone1_min` … `zone5_min`, rounded to 2 decimals |
 | `Garmin <id>` tag in `notes`, no `garminId` | `garmin_id` set; the note text is kept |
 | (none) | `variant` = `[]` |
 

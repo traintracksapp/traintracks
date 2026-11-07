@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_COLUMNS, LOG_TYPE_FIELDS, newId, inSession, sessionEntries, sortLog, mergeSession,
-  removeSession, lastSession, sessionDates, machineSessions, moveSession, garminIdOf, logToCSV, logToJSON } from '../lib/log.js';
+  removeSession, lastSession, sessionDates, machineSessions, moveSession, garminIdOf, logToCSV, logToJSON, zoneSeconds, minFromSec } from '../lib/log.js';
 import { parseCSV } from '../lib/csv.js';
 
 // Made-up data only: "Example Gym" (gym_id "eg"), machine "r02".
@@ -13,7 +13,7 @@ test('LOG_COLUMNS: notes last, no duplicates, matches docs/DATA-FORMAT.md', () =
   assert.equal(LOG_COLUMNS.at(-1), 'notes');
   assert.equal(new Set(LOG_COLUMNS).size, LOG_COLUMNS.length);
   assert.equal(LOG_COLUMNS.join(','),
-    'id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,reps,duration_sec,distance_mi,speed_mph,level,incline_pct,hr_avg_bpm,garmin_id,zone1_sec,zone2_sec,zone3_sec,zone4_sec,zone5_sec,notes');
+    'id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,reps,duration_sec,duration_min,distance_mi,speed_mph,level,incline_pct,hr_avg_bpm,garmin_id,zone1_min,zone2_min,zone3_min,zone4_min,zone5_min,notes');
 });
 
 test('every log-type field is a CSV column', () => {
@@ -201,12 +201,12 @@ test('machineSessions: newest first; two variants on one day are two sessions', 
 const TO = { gym_id: 'other', gym: 'Other Gym', room_id: 'c', room: 'Cardio', machine_id: 'tm', machine: 'Treadmill' };
 
 test('moveSession: moves every set, keeps every field (garmin link, zones, notes)', () => {
-  const log = [E({ id: 'g1', duration_sec: 1800, garmin_id: '24000000001', zone1_sec: 1200, notes: 'Garmin walk' }), E({ id: 'keep', machine_id: 'x' })];
+  const log = [E({ id: 'g1', duration_sec: 1800, garmin_id: '24000000001', zone1_min: 20, notes: 'Garmin walk' }), E({ id: 'keep', machine_id: 'x' })];
   const out = moveSession(log, S(), TO);
   const m = out.find(e => e.id === 'g1');
   assert.deepEqual([m.gym_id, m.gym, m.room_id, m.machine_id, m.machine, m.set], ['other', 'Other Gym', 'c', 'tm', 'Treadmill', 1]);
   assert.equal(m.garmin_id, '24000000001');
-  assert.equal(m.zone1_sec, 1200);
+  assert.equal(m.zone1_min, 20);
   assert.equal(m.date, '2026-11-05');
   assert.equal(out.length, 2);
   assert.deepEqual(out.map(e => e.id), ['g1', 'keep'], 'rows stay in place');
@@ -222,4 +222,30 @@ test('moveSession: same machine or nothing to move → unchanged', () => {
   const log = [E({ id: 'a' })];
   assert.equal(moveSession(log, S(), { ...TO, gym_id: 'eg', machine_id: 'r02' }), log);
   assert.equal(moveSession(log, S({ date: '2020-01-01' }), TO), log);
+});
+
+test('CSV: duration_min is computed from duration_sec (2 decimals) and never stored', () => {
+  const log = [E({ id: 'j', weight_lb: undefined, reps: undefined, duration_sec: 1707 }), E({ id: 'w', duration_sec: undefined })];
+  const rows = parseCSV(logToCSV(log));
+  assert.equal(rows[0].duration_sec, '1707');
+  assert.equal(rows[0].duration_min, '28.45');
+  assert.equal(rows[1].duration_min, '');
+  assert.ok(!('duration_min' in log[0]));
+  assert.deepEqual([minFromSec(731), minFromSec(45), minFromSec(60), minFromSec(null), minFromSec('')], [12.18, 0.75, 1, null, null]);
+});
+
+test('CSV: zones in minutes; rows from 0.2.0 with zone{i}_sec are exported in minutes too', () => {
+  const log = [E({ id: 'new', zone1_min: 1.73, zone2_min: 19.72 }), E({ id: 'old', zone1_sec: 104, zone3_sec: 300 })];
+  const rows = parseCSV(logToCSV(log));
+  assert.deepEqual([rows[0].zone1_min, rows[0].zone2_min, rows[0].zone3_min], ['1.73', '19.72', '']);
+  assert.deepEqual([rows[1].zone1_min, rows[1].zone2_min, rows[1].zone3_min], ['1.73', '', '5']);
+  assert.ok(!logToCSV(log).split('\n')[0].includes('_sec,zone'));
+});
+
+test('zoneSeconds: minutes first, old seconds accepted, blank is null', () => {
+  assert.equal(zoneSeconds({ zone2_min: 19.72 }, 2), 1183.2);
+  assert.equal(zoneSeconds({ zone2_sec: 1183 }, 2), 1183);
+  assert.equal(zoneSeconds({ zone2_min: 1, zone2_sec: 999 }, 2), 60);
+  assert.equal(zoneSeconds({ zone2_min: '' }, 2), null);
+  assert.equal(zoneSeconds({}, 2), null);
 });

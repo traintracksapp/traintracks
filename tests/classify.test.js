@@ -15,7 +15,8 @@ const info = machineInfoMap(gyms);
 const E = o => ({ gym_id: 'generic', date: '2026-11-05', ...o });
 const c = o => classifyEntry(E(o), info);
 
-test('classify: garmin walk with zones → cardio', () => assert.equal(c({ machine_id: 'walk', duration_sec: 2400, zone1_sec: 1800 }), 'cardio'));
+test('classify: garmin walk with zones → cardio', () => assert.equal(c({ machine_id: 'walk', duration_sec: 2400, zone1_min: 30 }), 'cardio'));
+test('classify: zones alone (old zone1_sec rows too) → cardio', () => { assert.equal(c({ machine_id: 'zz', zone1_min: 3 }), 'cardio'); assert.equal(c({ machine_id: 'zz', zone1_sec: 180 }), 'cardio'); });
 test('classify: walk log_type without zones → cardio', () => assert.equal(c({ machine_id: 'walk', duration_sec: 2400 }), 'cardio'));
 test('classify: swim (time, outdoor) → cardio', () => assert.equal(c({ machine_id: 'swim', duration_sec: 1800 }), 'cardio'));
 test('classify: spin class (mins) → cardio', () => assert.equal(c({ machine_id: 'spin-class', duration_sec: 2700 }), 'cardio'));

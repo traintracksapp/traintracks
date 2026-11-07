@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDuration, fmtDuration, fmtSeconds, fmtPace, fmtDistancePace, fmtNum } from '../lib/format.js';
+import { parseDuration, fmtDuration, fmtSeconds, fmtPace, fmtDistancePace, fmtNum, fmtClock } from '../lib/format.js';
 
 // Ported from LogTrim tests/utils.test.js. LogTrim's parseMinutes returned
 // minutes; parseDuration returns seconds (D15), so the expected values are ×60.
@@ -93,4 +93,8 @@ test('fmtLast: summaries', () => {
   assert.equal(fmtLast([{ date: t, distance_mi: 2.2, duration_sec: 2640 }], t), 'Today · 2.2 mi in 44 min');
   assert.equal(fmtLast([{ date: t, duration_sec: 2700 }], t), 'Today · 45 min');
   assert.equal(fmtLast([], t), '');
+});
+
+test('fmtClock: always m:ss, for zone times read side by side', () => {
+  assert.deepEqual([fmtClock(540), fmtClock(60), fmtClock(44), fmtClock(943), fmtClock(3725), fmtClock(null), fmtClock('')], ['9:00', '1:00', '0:44', '15:43', '1:02:05', '', '']);
 });

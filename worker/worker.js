@@ -30,12 +30,12 @@
 //   GITHUB_REPO   your repository name (usually traintracks)
 //   GITHUB_BRANCH optional, default main
 
-const VERSION = '0.2.0';
+const VERSION = '0.2.1';
 const LOG_COLUMNS = [
   'id', 'date', 'time', 'gym_id', 'gym', 'room_id', 'room', 'machine_id', 'machine',
-  'variant', 'set', 'weight_lb', 'reps', 'duration_sec', 'distance_mi', 'speed_mph',
+  'variant', 'set', 'weight_lb', 'reps', 'duration_sec', 'duration_min', 'distance_mi', 'speed_mph',
   'level', 'incline_pct', 'hr_avg_bpm', 'garmin_id',
-  'zone1_sec', 'zone2_sec', 'zone3_sec', 'zone4_sec', 'zone5_sec', 'notes'
+  'zone1_min', 'zone2_min', 'zone3_min', 'zone4_min', 'zone5_min', 'notes'
 ];
 
 // ---- the log files, written exactly as the app writes them (lib/log.js) ----
@@ -45,7 +45,20 @@ export function csvField(v) {
   if (/[",\r\n]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
   return s;
 }
-export const logToCSV = log => [LOG_COLUMNS.join(','), ...log.map(e => LOG_COLUMNS.map(c => csvField(e[c])).join(','))].join('\n') + '\n';
+const round2 = x => Math.round(x * 100) / 100;
+const numOrNull = v => (v == null || v === '' || isNaN(+v) ? null : +v);
+// duration_min is computed (export only); zone minutes come from zone{i}_sec on rows older than 0.2.1.
+export function csvRow(e) {
+  const d = numOrNull(e.duration_sec);
+  const r = { ...e, duration_min: d == null ? null : round2(d / 60) };
+  for (let i = 1; i <= 5; i++) {
+    if (r[`zone${i}_min`] != null) continue;
+    const m = numOrNull(e[`zone${i}_min`]), s = numOrNull(e[`zone${i}_sec`]);
+    r[`zone${i}_min`] = m != null ? m : s != null ? round2(s / 60) : null;
+  }
+  return r;
+}
+export const logToCSV = log => [LOG_COLUMNS.join(','), ...log.map(e => { const r = csvRow(e); return LOG_COLUMNS.map(c => csvField(r[c])).join(','); })].join('\n') + '\n';
 export const logToJSON = log => JSON.stringify(log, null, 2) + '\n';
 
 const b64 = s => { const b = new TextEncoder().encode(s); let x = ''; for (let i = 0; i < b.length; i += 0x8000) x += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(x); };

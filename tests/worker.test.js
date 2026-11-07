@@ -24,6 +24,11 @@ test('the Worker writes the log files exactly as the app does', () => {
   assert.equal(wJSON(log), logToJSON(log));
 });
 
+test('the Worker exports duration_min and zone minutes exactly as the app does (0.2.0 rows too)', () => {
+  const log = [E({ duration_sec: 1707, zone1_min: 1.73, zone2_min: 19.72 }), E({ id: 'x3', duration_sec: 731, zone1_sec: 104, zone3_sec: 300 }), E({ id: 'x4', duration_sec: '' })];
+  assert.equal(wCSV(log), logToCSV(log));
+});
+
 test('auth: Bearer header, trimmed; query token still accepted; wrong or missing → 401', async () => {
   const { call } = setup();
   assert.equal((await call('/')).status, 200);
