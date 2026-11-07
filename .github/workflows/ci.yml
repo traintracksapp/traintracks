@@ -1,0 +1,36 @@
+name: CI
+# Tests run in the template repository only: user repos made from the template
+# carry this file too, and shouldn't spend a run on every saved workout.
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    if: github.repository_owner == 'traintracksapp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JavaScript tests
+        run: if [ -d tests ]; then npm test; else echo "no tests yet"; fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install garminconnect
+        run: pip install --quiet "garminconnect>=0.3.20"
+      - name: Python tests
+        run: if ls pipelines/garmin/test_*.py >/dev/null 2>&1; then npm run test:py; else echo "no Python tests yet"; fi
+  browser:
+    if: github.repository_owner == 'traintracksapp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright and Chromium
+        run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - name: Browser smoke test (made-up data)
+        run: node tests/e2e/run.mjs

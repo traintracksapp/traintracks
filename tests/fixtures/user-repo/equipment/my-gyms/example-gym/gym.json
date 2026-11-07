@@ -1,0 +1,24 @@
+{
+  "id": "example-gym",
+  "name": "Example Gym",
+  "icon": "🏋️",
+  "is_generic": false,
+  "rooms": [
+    {
+      "id": "weights",
+      "name": "Weight Room",
+      "machines": [
+        { "id": "r02", "name": "Seated Row", "muscles_worked": "Back, biceps", "image": null, "log_type": "weight",
+          "variations": { "grip": ["narrow", "wide", "neutral"] } },
+        { "id": "assist", "name": "Assisted Pull-up", "muscles_worked": "Back", "image": null, "log_type": "weight" }
+      ]
+    },
+    {
+      "id": "cardio",
+      "name": "Cardio",
+      "machines": [
+        { "id": "tm", "name": "Treadmill", "muscles_worked": "", "image": null, "log_type": "cardio" }
+      ]
+    }
+  ]
+}

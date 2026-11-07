@@ -1,0 +1,6 @@
+id,date,time,gym_id,gym,room_id,room,machine_id,machine,variant,set,weight_lb,reps,duration_sec,distance_mi,speed_mph,level,incline_pct,hr_avg_bpm,garmin_id,zone1_sec,zone2_sec,zone3_sec,zone4_sec,zone5_sec,notes
+f1,2026-11-04,18:00:00,example-gym,Example Gym,weights,Weight Room,r02,Seated Row,,1,60,12,,,,,,,,,,,,,
+f2,2026-11-04,18:00:00,example-gym,Example Gym,weights,Weight Room,r02,Seated Row,,2,70,10,,,,,,,,,,,,,
+f3,2026-11-02,18:00:00,example-gym,Example Gym,weights,Weight Room,assist,Assisted Pull-up,,1,-100,8,,,,,,,,,,,,,harder than expected
+f4,2026-11-01,18:00:00,example-gym,Example Gym,cardio,Cardio,tm,Treadmill,,1,,,1800,,3.3,,4,118,,,,,,,
+f5,2026-10-30,18:00:00,generic,Common Machines,bodyweight-no-equipment,Bodyweight — No Equipment,push-ups,Push Ups,,1,,20,,,,,,,,,,,,,

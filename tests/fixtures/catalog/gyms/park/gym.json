@@ -1,0 +1,3 @@
+{ "id": "park", "name": "Park Bars", "icon": "🌳", "isGeneric": false, "rooms": [ { "id": "main", "name": "Bars", "machines": [
+  { "id": "pb1", "name": "Pull-up Bar", "musclesWorked": "Back", "image": null, "logType": "reps" },
+  { "id": "pb2", "name": "Dip Station", "musclesWorked": "Chest, triceps", "image": null, "logType": "reps" } ] } ] }

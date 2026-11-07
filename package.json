@@ -1,0 +1,13 @@
+{
+  "name": "traintracks",
+  "version": "0.2.0",
+  "description": "A self-hosted workout logger and planner that lives in your own GitHub repo.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "test:py": "python3 -m unittest discover -s pipelines/garmin -p 'test_*.py'",
+    "serve": "python3 -m http.server 8080"
+  },
+  "license": "MIT"
+}

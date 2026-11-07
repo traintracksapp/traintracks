@@ -1,0 +1,3 @@
+{
+  "_comment": "Where indoor Garmin activities go. Keys are a Garmin activity id (one activity) or an activity type (every activity of that type, e.g. 'indoor_cycling', 'treadmill_running', 'elliptical', 'other'). Value: { machine_id, machine, gym_id, gym, room_id, room, word }. Outdoor walk/run/ride/hike need no entry: they post to the common gym's Outdoor Activities room."
+}
