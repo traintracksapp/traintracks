@@ -17,3 +17,14 @@ jobs:
           python-version: '3.12'
       - name: Python tests
         run: if ls pipelines/garmin/test_*.py >/dev/null 2>&1; then npm run test:py; else echo "no Python tests yet"; fi
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Playwright and Chromium
+        run: npm install --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
+      - name: Browser smoke test (made-up data)
+        run: node tests/e2e/run.mjs

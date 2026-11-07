@@ -43,5 +43,7 @@ a fresh history (one-time force-push, confirmed with the owner first).
 ## Working here
 
 - `npm test` runs the JavaScript tests (node:test); `npm run test:py` the Python ones.
+- `node tests/e2e/run.mjs [data-dir] [shots-dir]`: browser smoke test against an in-memory
+  GitHub seeded from a folder (default: the made-up fixture). Only ever point it at a COPY.
 - Keep `CHANGELOG.md` and `VERSION` in step.
 - Commit messages: imperative, one line, no emoji. Stage explicit paths.

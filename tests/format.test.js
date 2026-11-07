@@ -41,7 +41,8 @@ test('round-trip "30:00"', () => assert.equal(fmtDuration(parseDuration('30:00')
 
 test('fmtSeconds: short holds in seconds', () => {
   assert.equal(fmtSeconds(45), '45 s');
-  assert.equal(fmtSeconds(90), '1:30');
+  assert.equal(fmtSeconds(90), '90 s');
+  assert.equal(fmtSeconds(150), '2:30 min');
   assert.equal(fmtSeconds(null), '');
 });
 
@@ -50,4 +51,46 @@ test('fmtNum: trims trailing zeros', () => {
   assert.equal(fmtNum(1.0), '1');
   assert.equal(fmtNum(1.239), '1.24');
   assert.equal(fmtNum(null), '');
+});
+
+import { fmtWeight, fmtDate, fmtDateFull, fmtRange, fmtSet, fmtLast } from '../lib/format.js';
+
+test('fmtWeight: negative weight is assistance', () => {
+  assert.equal(fmtWeight(60), '60 lb');
+  assert.equal(fmtWeight(-100), '100 lb assist');
+  assert.equal(fmtWeight(null), '');
+});
+
+test('fmtDate: relative to today', () => {
+  assert.equal(fmtDate('2026-11-07', '2026-11-07'), 'Today');
+  assert.equal(fmtDate('2026-11-06', '2026-11-07'), 'Yesterday');
+  assert.equal(fmtDate('2026-11-04', '2026-11-07'), '3d ago');
+  assert.equal(fmtDate('2026-10-04', '2026-11-07'), 'Oct 4');
+});
+
+test('fmtDateFull / fmtRange', () => {
+  assert.equal(fmtDateFull('2026-11-07'), 'Sat, Nov 7, 2026');
+  assert.equal(fmtRange('2026-10-31', '2026-11-06'), 'Oct 31 – Nov 6');
+});
+
+test('fmtSet: each kind of set', () => {
+  assert.equal(fmtSet({ weight_lb: 60, reps: 12 }), '60 lb × 12');
+  assert.equal(fmtSet({ weight_lb: -85, reps: 7 }), '85 lb assist × 7');
+  assert.equal(fmtSet({ reps: 20 }), '20 reps');
+  assert.equal(fmtSet({ duration_sec: 60 }), '60 s');
+  assert.equal(fmtSet({ duration_sec: 2700 }), '45 min');
+  assert.equal(fmtSet({ distance_mi: 1.5, duration_sec: 1800, hr_avg_bpm: 95 }), '1.5 mi · 30 min · 20:00/mi · HR 95');
+  assert.equal(fmtSet({ duration_sec: 300, speed_mph: 3.3, incline_pct: 4 }), '5 min · 3.3 mph · 4% incline · 18:11/mi');
+  assert.equal(fmtSet({}), '—');
+});
+
+test('fmtLast: summaries', () => {
+  const t = '2026-11-07';
+  assert.equal(fmtLast([{ date: t, weight_lb: 60, reps: 12 }, { date: t, weight_lb: 70, reps: 8 }], t), 'Today · 70 lb × 2 sets');
+  assert.equal(fmtLast([{ date: t, weight_lb: -100, reps: 10 }, { date: t, weight_lb: -85, reps: 7 }], t), 'Today · 85 lb assist × 2 sets');
+  assert.equal(fmtLast([{ date: t, reps: 20 }, { date: t, reps: 25 }], t), 'Today · 45 reps · 2 sets');
+  assert.equal(fmtLast([{ date: t, duration_sec: 60 }, { date: t, duration_sec: 60 }, { date: t, duration_sec: 60 }], t), 'Today · 3× 60 s');
+  assert.equal(fmtLast([{ date: t, distance_mi: 2.2, duration_sec: 2640 }], t), 'Today · 2.2 mi in 44 min');
+  assert.equal(fmtLast([{ date: t, duration_sec: 2700 }], t), 'Today · 45 min');
+  assert.equal(fmtLast([], t), '');
 });

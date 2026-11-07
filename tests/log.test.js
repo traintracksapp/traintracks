@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LOG_COLUMNS, LOG_TYPE_FIELDS, newId, inSession, sessionEntries, sortLog, mergeSession,
-  removeSession, lastSession, sessionDates, garminIdOf, logToCSV, logToJSON } from '../lib/log.js';
+  removeSession, lastSession, sessionDates, machineSessions, garminIdOf, logToCSV, logToJSON } from '../lib/log.js';
 import { parseCSV } from '../lib/csv.js';
 
 // Made-up data only: "Example Gym" (gym_id "eg"), machine "r02".
@@ -189,4 +189,11 @@ test('logToCSV: fields that are not columns are left out of the CSV (kept in the
 test('logToJSON: pretty-printed with a trailing newline', () => {
   assert.equal(logToJSON([]), '[]\n');
   assert.ok(logToJSON([E()]).startsWith('[\n  {'));
+});
+
+test('machineSessions: newest first; two variants on one day are two sessions', () => {
+  const log = [E({ date: '2026-11-04', variant: ['wide'], reps: 1 }), E({ date: '2026-11-04', variant: [], set: 1 }), E({ date: '2026-11-04', variant: [], set: 2 }),
+    E({ date: '2026-11-06', reps: 9 }), E({ date: '2026-11-06', machine_id: 'other' })];
+  const s = machineSessions(log, 'r02', 'eg');
+  assert.deepEqual(s.map(x => [x.date, x.variant.join(';'), x.sets.length]), [['2026-11-06', '', 1], ['2026-11-04', 'wide', 1], ['2026-11-04', '', 2]]);
 });
