@@ -27,6 +27,7 @@ saw only the code rediscovered a deliberate decision as a bug.
   leave the JSON and CSV out of step.
 - **Stored data is neutral.** Heart rate is stored as 5-bpm buckets per activity;
   zones and HR-range goals are applied when shown.
+- **Classification:** an entry with speed, distance, heart rate, incline, zones or a Garmin link is cardio, whatever the machine. (LogTrim used heart rate and incline only; version 2 split `level` into speed and distance.)
 - **Zone minutes come only from Garmin data.** Hand-logged cardio counts 0.
 - **The generic gym is template-managed.** User changes to it are stored
   separately and merged on load, so updates don't wipe them.
