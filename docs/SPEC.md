@@ -379,15 +379,15 @@ Rules:
 - **Variants count the same as the main exercise, everywhere:** goals, weekly totals, history and progress charts. There is one series per machine. A variant is a label you can filter by; it never splits the numbers. An incline push-up may be a little easier, but done daily it evens out. (The `variants` / `excludeVariants` goal filters in rule 7 remain available but are never the default.)
 - **Variant or separate machine?** If two forms are *not interchangeable*, they stay **separate machines**: different enough that you'd want a separate target or history. The test is "would you be annoyed if one counted toward the other?" The three planks (`elbow-planks`, `high-planks`, `side-planks`) are the example. They stay three machines with no plank variations, and the existing goal that sums them keeps working.
 
-**Generic gym starter set.** Leg press is confirmed by the owner. The rest are proposed, for the owner to confirm in Phase 2; add to them over time.
+**Generic gym starter set.** Confirmed by the owner (7 Nov 2026) as shipped in `equipment/generic/gym.json`; add to them over time. Each machine also has `variations_default` (the plain form, never stored).
 
 | Machine | Groups → tags |
 |---|---|
 | `push-ups` | grip: narrow, standard, wide, diamond · angle: flat, incline, decline |
 | `lunges`, `dumbbell-lunges` | direction: forward, reverse, lateral, walking |
-| `leg-press` *(confirmed)* | feet: high, standard, low · stance: narrow, standard, wide · legs: both, single |
+| `leg-press` | feet: high, mid, low · stance: narrow, standard, wide · legs: both, single (feet uses *mid*, not *standard*, so every tag in a machine is unique) |
 | `squats`, `barbell-squat` | stance: narrow, standard, wide, sumo · depth: parallel, deep |
-| `sit-ups` | style: standard, weighted, twisting |
+| `sit-ups` | style: plain, weighted, twisting |
 | curls (`bicep-curl`, `standing-dumbbell-curl`) | grip: supinated, hammer, reverse · arms: both, alternating, single |
 | presses (`dumbbell-press`, `shoulder-press`, `chest-press`) | grip: standard, narrow, wide · arms: both, single |
 | `seated-row`, `lat-pulldown` | grip: wide, narrow, neutral, underhand |
