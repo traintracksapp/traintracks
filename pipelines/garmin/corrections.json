@@ -1,0 +1,3 @@
+{
+  "_comment": "Hand corrections applied by build_buckets.py, keyed by Garmin activity id. keep = [from, to] inclusive 'YYYY-MM-DD HH:MM' window (minutes outside are dropped); set_hr = [{from, to, hr_bpm}] treat a minute range as this heart rate (sensor misread); add = [{duration_sec, hr_bpm}] extra time at this heart rate (watch paused). Entries are personal; the template ships none."
+}

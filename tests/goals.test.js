@@ -261,3 +261,14 @@ test('cleanGoalsConfig: trims labels, numbers targets, checks zone floors', () =
   assert.deepEqual(c.goals.hr_zones_bpm, [105, 120]);
   assert.equal(R.cleanGoalsConfig({ hr_zones_bpm: [120, 110] }).ok, false);
 });
+
+test('an average is judged at the precision it is shown with (LogTrim parity)', () => {
+  // 7.094 h shows as "7.1 h"; against a 7.1 h target it is a hit, as in LogTrim
+  const g = [{ id: 's', kind: 'avg', source: 'wellness', field: 'sleep_sec', target: 25560, display: 'h' }];
+  const w = [{ date: '2026-09-27', sleep_sec: 25500 }, { date: '2026-09-28', sleep_sec: 25580 }];
+  const r = R.computeGoals(g, { log: [], wellness: w, gyms, week_start: 'sat', today: '2026-09-29' }).results[0];
+  assert.equal(r.value, 25560);
+  assert.equal(r.status, 'hit');
+  assert.equal(R.roundForDisplay(1234.4, 'min'), 1236);
+  assert.equal(R.roundForDisplay(48.34), 48.3);
+});

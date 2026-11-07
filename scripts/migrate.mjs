@@ -16,7 +16,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { convertLog, convertGym, convertLocalOverrides, applyFixups, convertGoals, convertProfile, convertPlan, v1MachineTypes } from '../lib/migrate.js';
+import { convertLog, convertGym, convertLocalOverrides, applyFixups, convertGoals, convertProfile, convertPlan, v1MachineTypes,
+  convertCardioMinutesCSV, convertBucketsCSV, convertWellnessCSV, convertZones, convertCorrections, convertMapping } from '../lib/migrate.js';
 import { logToJSON, logToCSV } from '../lib/log.js';
 
 const args = process.argv.slice(2);
@@ -65,13 +66,27 @@ const p1 = maybe('profile.json');
 if (p1) write('profile.json', JSON.stringify(convertProfile(p1), null, 2) + '\n');
 const s1 = maybe('suggested-workout.json');
 if (s1) write('suggested-workout.json', JSON.stringify(convertPlan(s1, v1MachineTypes(gyms.map(g => g.data), local)), null, 2) + '\n');
+// Garmin files (garmin-recent.json is not converted: the next Garmin run rewrites it)
+const garminDone = [];
+const csvConv = { 'cardio-minutes.csv': convertCardioMinutesCSV, 'cardio-buckets.csv': convertBucketsCSV, 'daily-wellness.csv': convertWellnessCSV };
+for (const [f, fn] of Object.entries(csvConv)) if (fs.existsSync(path.join(src, f))) { write(f, fn(fs.readFileSync(path.join(src, f), 'utf8'))); garminDone.push(f); }
+const jsonConv = { 'pipelines/garmin/zones.json': convertZones, 'pipelines/garmin/corrections.json': convertCorrections, 'pipelines/garmin/mapping.json': convertMapping };
+const ROOT = path.resolve(new URL('..', import.meta.url).pathname);
+for (const [f, fn] of Object.entries(jsonConv)) {
+  if (!fs.existsSync(path.join(src, f))) continue;
+  const out = fn(readJSON(path.join(src, f)));
+  const tpl = path.join(ROOT, f); // the explanatory comment comes from the template (the old one names old keys)
+  if (out && fs.existsSync(tpl)) { const c = readJSON(tpl)._comment; if (c) out._comment = c; }
+  write(f, JSON.stringify(out, null, 2) + '\n');
+  garminDone.push(f);
+}
 for (const f of ['VERSION']) if (fs.existsSync(path.join(src, f))) write(f, fs.readFileSync(path.join(src, f)));
 
 // Report
 console.log(`Source: ${src}\nOutput: ${dst}\n`);
 console.log(`Gyms converted: ${gyms.length}${local ? ' (+ generic.local.json)' : ''}`);
 console.log(`Log entries: ${v1.length} in, ${r.log.length} out`);
-console.log(`Also converted: ${['goals.json', 'profile.json', 'suggested-workout.json'].filter(f => fs.existsSync(path.join(src, f))).join(', ') || 'nothing else'}${goalNotes.length ? `\n  ${goalNotes.join('\n  ')}` : ''}\n`);
+console.log(`Also converted: ${[...['goals.json', 'profile.json', 'suggested-workout.json'].filter(f => fs.existsSync(path.join(src, f))), ...garminDone].join(', ') || 'nothing else'}${goalNotes.length ? `\n  ${goalNotes.join('\n  ')}` : ''}\n`);
 console.log('Conversions applied (entries per rule):');
 for (const [k, v] of Object.entries(r.counts).sort((a, b) => a[0].localeCompare(b[0]))) console.log(`  ${String(v).padStart(5)}  ${k}`);
 if (fx) {

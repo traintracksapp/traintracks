@@ -291,3 +291,37 @@ test('convertPlan: keys and set units by machine type', () => {
   assert.deepEqual(p.exercises[2].sets, [{ set: 1, duration_sec: 1800, incline_pct: 4, speed_mph: 3.3 }]);
   assert.equal(convertPlan(null), null);
 });
+
+// ---- Garmin files ----
+import { convertCardioMinutesCSV, convertBucketsCSV, convertWellnessCSV, convertZones, convertCorrections, convertMapping } from '../lib/migrate.js';
+import { parseCSV as pc } from '../lib/csv.js';
+
+test('convertCardioMinutesCSV', () => {
+  const out = convertCardioMinutesCSV('date,activity_id,activity_type,minute,avg_hr_weighted,seconds_covered\n2026-11-05,1,walking,2026-11-05 07:00,100.5,59.6\n');
+  assert.equal(out, 'date,activity_id,activity_type,minute,hr_avg_bpm,covered_sec\n2026-11-05,1,walking,2026-11-05 07:00,100.5,60\n');
+});
+
+test('convertBucketsCSV: minutes → seconds, columns renamed', () => {
+  const out = pc(convertBucketsCSV('date,start,activity_id,activity_type,minutes,avg_hr,max_minute_hr,corrected,hr_under70,hr70_74,hr185_up\n2026-11-05,2026-11-05 07:00,1,walking,30.5,98,131,y,2,,0.25\n'))[0];
+  assert.deepEqual(out, { date: '2026-11-05', start: '2026-11-05 07:00', activity_id: '1', activity_type: 'walking', duration_sec: '1830', hr_avg_bpm: '98',
+    hr_max_minute_bpm: '131', corrected: 'y', hr_under70_sec: '120', hr70_74_sec: '', hr185_up_sec: '15' });
+});
+
+test('convertWellnessCSV: columns and units', () => {
+  const out = pc(convertWellnessCSV('date,steps,sleep_hours,deep_sleep_min,resting_hr,hrv_last_night,distance_miles,intensity_moderate_min\n2026-11-05,9000,7.63,95,47,40,4.1,22\n2026-11-06,,,,,,,\n'));
+  assert.equal(out[0].sleep_sec, '27468');
+  assert.equal(out[0].sleep_deep_sec, '5700');
+  assert.equal(out[0].resting_hr_bpm, '47');
+  assert.equal(out[0].hrv_ms, '40');
+  assert.equal(out[0].distance_mi, '4.1');
+  assert.equal(out[0].intensity_moderate_sec, '1320');
+  assert.equal(out[1].sleep_sec, '');
+});
+
+test('convertZones / convertCorrections / convertMapping', () => {
+  assert.deepEqual(convertZones({ _comment: 'x', rhr: 50, hrmax: 175, sinceDays: 14 }), { _comment: 'x', rhr_bpm: 50, hr_max_bpm: 175, since_days: 14 });
+  assert.deepEqual(convertCorrections({ _comment: 'c', 123: { note: 'n', keep: ['a', 'b'], set_hr: [{ from: 'a', to: 'b', hr: 127 }], add: [{ minutes: 9.4, hr: 85 }] } }),
+    { _comment: 'c', 123: { note: 'n', keep: ['a', 'b'], set_hr: [{ from: 'a', to: 'b', hr_bpm: 127 }], add: [{ duration_sec: 564, hr_bpm: 85 }] } });
+  assert.deepEqual(convertMapping({ _comment: 'm', other: { machineId: 'm1', gymId: 'generic', roomId: 'out', machine: 'Jog', word: 'jog' } }),
+    { _comment: 'm', other: { machine_id: 'm1', gym_id: 'generic', room_id: 'out', machine: 'Jog', word: 'jog' } });
+});

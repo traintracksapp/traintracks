@@ -11,6 +11,9 @@ A rewrite of TrainTracks to spec 1.3 (`docs/SPEC.md`).
 - Weekly report and goals editor in the new units (durations stored in seconds, shown in minutes or hours), with variation filters on exercise goals; Today's Route with plan prefill, planned variations and the celebration; profile; equipment manager with variations and photo resizing; gym catalog import (converted from the catalog's old format); heart-rate zones in machine history.
 - Starter variations for the common gym (push-ups, lunges, leg press, squats, sit-ups, curls, presses, rows, pulldowns).
 - The converter also handles goals, profile and the plan.
+- Garmin pipelines in format version 2: one gated workflow; tokens in the new JSON format only (older ones are rejected with instructions); heart-rate buckets in seconds; wellness columns in seconds with units in their names; Garmin rows posted to the log exactly as the app writes it; new `body-composition.csv` and `blood-pressure.csv` from a Garmin Index scale and blood-pressure monitor.
+- The converter also handles the Garmin files and settings (zones, corrections, mapping).
+- App updates never overwrite your Garmin settings (`zones.json`, `corrections.json`, `mapping.json`).
 - Browser smoke test (`tests/e2e/run.mjs`), also run in CI.
 - A log save is one commit (JSON + CSV together), reloading and re-applying if another writer got there first.
 

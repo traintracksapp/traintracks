@@ -63,6 +63,12 @@ saw only the code rediscovered a deliberate decision as a bug.
 - `localStorage` is per origin: a new domain or repo name means signing in again
   on every device.
 
+## Garmin decisions
+
+- **Posting:** outdoor walks, runs, rides and hikes post automatically; other types need an entry in `mapping.json`; an activity overlapping a hand-logged timed session is skipped for review. Another *Garmin* activity nearby is not treated as a manual duplicate (0.1.0 did).
+- **Averages are judged at the precision they are shown**: an average sleep of 7.09 h shows as 7.1 h, so against a 7.1 h target it is a hit (as in LogTrim).
+- **Scale and blood pressure** are rebuilt in full each run from `GARMIN_HISTORY_START`; if any request fails, the files are left unchanged rather than losing readings.
+
 ## Garmin facts
 
 - Sleep is assigned to the wake-up date; "today" is partial until the watch
