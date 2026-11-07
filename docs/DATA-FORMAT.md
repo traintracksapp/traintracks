@@ -52,7 +52,7 @@ the same commit on every save and is never edited by hand.
 | `machine_id`, `machine` | string | Machine id (unique within its gym) and display name. |
 | `variant` | list of tags | e.g. `["incline","wide"]`, sorted. Empty = the plain exercise. |
 | `set` | integer | 1-based within the session. |
-| `weight_lb` | number | Weight lifted. |
+| `weight_lb` | number | Weight lifted. **Negative = assistance** on an assisted machine (e.g. an assisted pull-up's counterweight): −100 is easier than −85, so higher is still harder and "best" is still the maximum. |
 | `reps` | integer | Repetitions. |
 | `duration_sec` | integer | Duration, for every kind of timed exercise (planks, classes, cardio). |
 | `distance_mi` | number | Distance. |
@@ -139,7 +139,8 @@ Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
 | `level`, logType `pace`, Garmin-linked row | `distance_mi` |
 | `level`, logType `pace`, hand-logged row | `level` |
 | `level` on a machine that no longer exists in any gym | `level`, unchanged and reported: early rows used it for pace (min/mi) or distance, so the owner decides |
-| negative numbers (e.g. an assisted machine's counterweight) | kept as they are and reported |
+| negative `weight` | kept (assistance, see `weight_lb`) |
+| other negative numbers | kept as they are and reported |
 | `zone1` … `zone5` (minutes) | `zone1_sec` … `zone5_sec` = minutes × 60, rounded |
 | `Garmin <id>` tag in `notes`, no `garminId` | `garmin_id` set; the note text is kept |
 | (none) | `variant` = `[]` |

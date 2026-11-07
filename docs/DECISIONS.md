@@ -21,6 +21,7 @@ saw only the code rediscovered a deliberate decision as a bug.
   interchangeable (the three planks) are separate machines.
 - **One convention everywhere** (`docs/DATA-FORMAT.md`): snake_case names, every number in one unit named by its suffix (`_sec`, `_mi`, `_lb`, `_bpm`...), in every data file. The old
   `duration`/`level` fields changed meaning by machine type.
+- **Negative weight means assistance** (assisted pull-up/dip machines). Kept as a negative number so ordering still works: −85 is harder than −100, and the maximum is the best set. The app shows it as assistance rather than rejecting it.
 - **The CSV is an export read by header name**, with standard quoting. Google
   Sheets reads it with `IMPORTDATA`.
 - **A log save is one commit.** Two PUTs made two commits per save and could

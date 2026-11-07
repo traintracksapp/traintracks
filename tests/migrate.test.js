@@ -160,11 +160,18 @@ test('convertLog: duplicate ids are fixed and reported', () => {
   assert.equal(r.problems.length, 1);
 });
 
-test('convertLog: negative values are kept and listed for a decision', () => {
-  const r = convertLog([V1({ id: 'n', weight: -100, reps: 10 })], gyms, local);
-  assert.equal(r.log[0].weight_lb, -100);
+test('convertLog: negative reps are kept and listed for a decision', () => {
+  const r = convertLog([V1({ id: 'n', reps: -4 })], gyms, local);
+  assert.equal(r.log[0].reps, -4);
   assert.equal(r.problems.length, 1);
-  assert.match(r.problems[0], /negative weight_lb/);
+  assert.match(r.problems[0], /negative reps/);
+});
+
+test('convertLog: negative weight is assistance on an assisted machine, valid and not flagged', () => {
+  const r = convertLog([V1({ id: 'a', weight: -100, reps: 10 }), V1({ id: 'b', weight: -85, reps: 7 })], gyms, local);
+  assert.deepEqual(r.log.map(e => e.weight_lb), [-100, -85]);
+  assert.deepEqual(r.problems, []);
+  assert.equal(Math.max(...r.log.map(e => e.weight_lb)), -85); // less assistance = harder = "heavier"
 });
 
 test('convertLog does not modify its input', () => {

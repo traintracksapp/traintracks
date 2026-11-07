@@ -69,7 +69,7 @@ if (fx) {
   const fixed = new Set((readJSON(fixupsPath).remap || []).map(x => x.machine_id));
   for (const k of Object.keys(r.unknownMachines)) { const id = /id ([^)]+)\)$/.exec(k); if (id && fixed.has(id[1])) delete r.unknownMachines[k]; }
   r.problems = r.problems.filter(p => !/: negative /.test(p));
-  for (const e of r.log) for (const f of ['weight_lb', 'reps', 'duration_sec', 'distance_mi', 'speed_mph', 'hr_avg_bpm']) {
+  for (const e of r.log) for (const f of ['reps', 'duration_sec', 'distance_mi', 'speed_mph', 'hr_avg_bpm']) {
     if (e[f] != null && e[f] < 0) r.problems.push(`${e.date} ${e.machine} (${e.gym || '?'}) set ${e.set}: negative ${f} — kept as is`);
   }
   r.problems.push(...fx.problems);
