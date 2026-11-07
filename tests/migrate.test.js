@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snake, convertGym, convertLocalOverrides, convertEntry, convertLog, v1MachineTypes } from '../lib/migrate.js';
+import { snake, convertGym, convertLocalOverrides, convertEntry, convertLog, v1MachineTypes, applyFixups } from '../lib/migrate.js';
 import { LOG_COLUMNS } from '../lib/log.js';
 
 // Version 1 fixtures (made-up gyms and ids).
@@ -172,4 +172,65 @@ test('convertLog does not modify its input', () => {
   convertLog(log, gyms, local);
   assert.equal(log[0].weight, 5);
   assert.ok('gymId' in log[0]);
+});
+
+// ---- corrections (applyFixups) ----
+const gyms2 = [{ id: 'generic', name: 'Common Machines', rooms: [
+  { id: 'outdoor-activities', name: 'Outdoor Activities', machines: [{ id: 'walk', name: 'Walk' }, { id: 'run', name: 'Run' }] },
+  { id: 'bw', name: 'Bodyweight', machines: [{ id: 'pull-ups', name: 'Pull-ups' }, { id: 'negative-pullups', name: 'Negative Pullups' }, { id: 'push-ups', name: 'Push Ups' }] }
+] }];
+const V2 = o => ({ id: 'z', date: '2026-06-26', time: '', gym_id: undefined, gym: 'Old Park', room: 'Bars', machine_id: 'm9', machine: 'Pullups', set: 1, variant: [], reps: null, notes: '', ...o });
+
+test('applyFixups: remap moves to the target machine and remembers where it came from', () => {
+  const r = applyFixups([V2({ reps: 5 })], { remap: [{ machine_id: 'm9', to: 'generic:pull-ups' }] }, gyms2);
+  const e = r.log[0];
+  assert.equal(e.gym_id, 'generic');
+  assert.equal(e.gym, 'Common Machines');
+  assert.equal(e.room_id, 'bw');
+  assert.equal(e.machine_id, 'pull-ups');
+  assert.equal(e.machine, 'Pull-ups');
+  assert.equal(e.migrated_from, 'Pullups @ Old Park (m9)');
+  assert.equal(r.counts['moved to generic:pull-ups'], 1);
+});
+
+test('applyFixups: level_is_pace turns pace into an estimated distance', () => {
+  const r = applyFixups([V2({ machine_id: 'w1', machine: 'Walk', duration_sec: 2640, level: 20 })],
+    { remap: [{ machine_id: 'w1', to: 'generic:walk', level_is_pace: true }] }, gyms2);
+  assert.equal(r.log[0].distance_mi, 2.2);
+  assert.equal(r.log[0].level, null);
+  assert.match(r.log[0].notes, /estimated from a pace of 20 min\/mi/);
+});
+
+test('applyFixups: pace without a duration is kept and reported', () => {
+  const r = applyFixups([V2({ machine_id: 'w1', level: 20 })], { remap: [{ machine_id: 'w1', to: 'generic:walk', level_is_pace: true }] }, gyms2);
+  assert.equal(r.log[0].level, 20);
+  assert.equal(r.problems.length, 1);
+});
+
+test('applyFixups: negative reps move to the other machine as positive reps; sessions renumbered', () => {
+  const log = [V2({ id: 'a', reps: 3, set: 1 }), V2({ id: 'b', reps: 4, set: 2 }), V2({ id: 'c', reps: -4, set: 3 })];
+  const r = applyFixups(log, { remap: [{ machine_id: 'm9', to: 'generic:pull-ups' }], negative_reps: { 'generic:pull-ups': 'generic:negative-pullups' } }, gyms2);
+  const [a, b, c] = r.log;
+  assert.equal(c.machine_id, 'negative-pullups');
+  assert.equal(c.reps, 4);
+  assert.equal(c.set, 1);
+  assert.deepEqual([a.machine_id, a.set, b.set], ['pull-ups', 1, 2]);
+});
+
+test('applyFixups: two old machines merged onto one machine and date are renumbered together', () => {
+  const log = [V2({ id: 'a', machine_id: 'p1', set: 1 }), V2({ id: 'b', machine_id: 'p2', set: 1 })];
+  const r = applyFixups(log, { remap: [{ machine_id: 'p1', to: 'generic:push-ups' }, { machine_id: 'p2', to: 'generic:push-ups' }] }, gyms2);
+  assert.deepEqual(r.log.map(e => e.set), [1, 2]);
+});
+
+test('applyFixups: unknown target is reported; untouched rows unchanged', () => {
+  const keep = V2({ machine_id: 'other', set: 7 });
+  const r = applyFixups([keep], { remap: [{ machine_id: 'm9', to: 'generic:nope' }] }, gyms2);
+  assert.equal(r.problems.length, 1);
+  assert.deepEqual(r.log[0], keep);
+});
+
+test('applyFixups: no corrections → log unchanged', () => {
+  const log = [V2({ reps: -1 })];
+  assert.deepEqual(applyFixups(log, null, gyms2).log, log);
 });

@@ -63,6 +63,7 @@ the same commit on every save and is never edited by hand.
 | `garmin_id` | string | Garmin activity id when the row is linked to one. |
 | `zone1_sec` … `zone5_sec` | integer | Time per HR zone. Compatibility copy on Garmin-posted rows only; the app computes zones from `cardio-buckets.csv`. May be dropped later. |
 | `notes` | string | Free text. Always the last CSV column. |
+| `migrated_from` | string | JSON only, optional. Where a row was before a migration correction moved it to another machine, e.g. `Pullups @ Old Park (m123)`. |
 
 Rules:
 - **Session** = same `gym_id` + `machine_id` + `date` + `variant`. Saving a session
@@ -147,5 +148,10 @@ Rows on machines that no longer exist in any gym (about 50 early rows such as
 "Walk", "Pushups", "Pullups") are mapped by their name to the closest generic
 machine where obvious, and otherwise kept as they are and listed in the
 migration report for a decision.
+
+The owner can pass a **corrections file** (kept outside the repo, since it names
+their own machines) to move rows from deleted machines onto existing ones, turn
+early pace values into estimated distances, and move negative reps to another
+machine (e.g. negative pull-ups). See `applyFixups` in `lib/migrate.js`.
 
 The migration prints counts per rule and writes nothing until confirmed.
