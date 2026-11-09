@@ -4,12 +4,13 @@
  *  - reads go through the Contents API (live, returns the sha a write needs);
  *  - single files are written with the sha they were loaded with, and on a
  *    conflict re-read and written again;
- *  - the log is written as one commit (lib/logstore.js);
+ *  - the log is written as one commit (lib/logstore.js), from a cached copy
+ *    when the branch has not moved since it was loaded or last saved;
  *  - raw.githubusercontent.com is used only for images (display) and the
  *    public gym catalog.
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
-import { loadLog as loadLogAt, commitLog as commitLogFiles } from '../lib/logstore.js';
+import { loadLog as loadLogAt, commitLog as commitLogFiles, newLogCache } from '../lib/logstore.js';
 import { FILES, CATALOG, TEMPLATE } from '../lib/config.js';
 import { sortLog } from '../lib/log.js';
 import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
@@ -17,7 +18,12 @@ import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
 import { convertGym } from '../lib/migrate.js';
 import { S, hasCfg } from './state.js';
 
+// The log as stored in the file at a known commit (lib/logstore.js). Every
+// load refreshes it; a save skips the download while the branch is unchanged.
+const logCache = newLogCache();
+
 export function connect() {
+  Object.assign(logCache, newLogCache());
   S.repo = hasCfg() ? new GitHubRepo({ owner: S.cfg.user, repo: S.cfg.repo, token: S.cfg.token }) : null;
   return S.repo;
 }
@@ -79,7 +85,7 @@ export async function loadGyms() {
 export const isOldFormat = log => log.some(e => e && ('machineId' in e || 'datetime' in e || 'gymId' in e));
 
 export async function loadLog() {
-  const { log } = await loadLogAt(repo());
+  const { log } = await loadLogAt(repo(), null, logCache);
   S.oldFormat = isOldFormat(log);
   S.log = sortLog(log);
 }
@@ -141,7 +147,7 @@ export function imageUrl(gym, file) {
  */
 export async function commitLog(apply, message) {
   if (S.oldFormat) throw new Error('This repository still has data in the old format. It must be migrated before the new app can save.');
-  const res = await commitLogFiles(repo(), log => apply(log), message);
+  const res = await commitLogFiles(repo(), log => apply(log), message, { cache: logCache });
   if (res) S.log = sortLog(res.log);
   return S.log;
 }

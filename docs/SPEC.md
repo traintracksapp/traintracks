@@ -453,12 +453,11 @@ Remove all existing entries for that machine+date, insert the new sets in their 
 Three writers share the log: the app (two Contents-API PUTs, JSON then CSV, each with the `sha` it loaded; retries once on `409` by reloading and re-applying the change — `commitLog(apply)`), the Garmin Action (one `git push` writing both files atomically; pulls with `--rebase --autostash` first) and the Worker's `/log-write` (requires `baseJsonSha`/`baseCsvSha` from a live `/log-json` read; `409` + `stale` list if either moved; `400` if JSON and CSV disagree; refuses to shrink the entry count unless `allowShrink`). **Two incidents in Oct 2026 where a session "restored a lost write" turned out to be stale reads from `raw.githubusercontent.com` (≈5-minute cache), not lost writes.** Rule: *never read a file you intend to write through a raw URL; always through the Contents API, and always send the base sha.*
 
 **Rebuild requirement: one commit per log save.** Today's two PUTs make two commits per save; that is about half of a typical personal repo's commits. If the second PUT fails, the JSON and CSV disagree. The app must write both files in one commit through the Git Data API:
-1. Create blobs for both files.
-2. Create a tree on top of the base commit's tree.
-3. Create a commit with the base commit as its parent.
-4. Fast-forward `refs/heads/main` without `force`.
+1. Create a tree on top of the base commit's tree, with both files' contents inline (since 0.2.2; separate blob uploads before).
+2. Create a commit with the base commit as its parent.
+3. Fast-forward `refs/heads/main` without `force`.
 
-A ref update that isn't a fast-forward (`422`) is the conflict signal: reload, re-apply, retry. A fine-grained token with Contents: Read & write covers these endpoints. Single-file writes (`goals.json`, `profile.json`, gym files) may stay as Contents-API PUTs.
+A ref update that isn't a fast-forward (`422`) is the conflict signal: reload, re-apply, retry. Since 0.2.2 the app keeps the log it last loaded or saved (with its commit and tree sha) and downloads it again only when the branch head has moved, so a save is 4 calls (GET ref, POST trees, POST commits, PATCH ref). A fine-grained token with Contents: Read & write covers these endpoints. Single-file writes (`goals.json`, `profile.json`, gym files) may stay as Contents-API PUTs.
 
 ---
 

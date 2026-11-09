@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeGitHub } from './fake-github.js';
 import { GitHubRepo, isConflict, b64encodeText, b64decodeText } from '../lib/github.js';
-import { loadLog, commitLog, LOG_JSON, LOG_CSV } from '../lib/logstore.js';
+import { loadLog, commitLog, newLogCache, LOG_JSON, LOG_CSV } from '../lib/logstore.js';
 import { mergeSession, logToJSON, logToCSV } from '../lib/log.js';
 import { parseCSV } from '../lib/csv.js';
 
@@ -113,6 +113,119 @@ test('commitLog: other files are not touched', async () => {
   const { gh, repo } = setup();
   await commitLog(repo, log => mergeSession(log, S, [{ reps: 5 }]), 'Log');
   assert.equal(gh.read('goals.json'), '{}\n');
+});
+
+// ---- the log cache: fewer calls per save ----
+
+const since = (gh, k) => gh.calls.slice(k).map(c => `${c.method} ${c.path.replace(/^\/repos\/[^/]+\/[^/]+/, '')}`);
+const isLogDownload = c => c.includes(`/contents/${LOG_JSON}`);
+
+test('commitLog with a warm cache: 4 calls, and the log is not downloaded', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  await loadLog(repo, null, cache);
+  const k = gh.calls.length;
+  await commitLog(repo, log => mergeSession(log, S, [{ reps: 20 }]), 'Log', { cache });
+  const calls = since(gh, k);
+  assert.deepEqual(calls, ['GET /git/ref/heads/main', 'POST /git/trees', 'POST /git/commits', 'PATCH /git/refs/heads/main']);
+  assert.ok(!calls.some(isLogDownload));
+});
+
+test('commitLog: the cache is updated after a save, so the next save is 4 calls too', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  await loadLog(repo, null, cache);
+  await commitLog(repo, log => mergeSession(log, S, [{ reps: 20 }]), 'Log 1', { cache });
+  assert.equal(cache.head, gh.head);
+  const k = gh.calls.length;
+  await commitLog(repo, log => mergeSession(log, { ...S, date: '2026-11-06' }, [{ reps: 15 }]), 'Log 2', { cache });
+  assert.equal(since(gh, k).length, 4);
+  assert.equal(cache.head, gh.head);
+  const json = JSON.parse(gh.read(LOG_JSON));
+  assert.equal(json.length, 3);
+  assert.deepEqual(cache.log, json);
+  assert.deepEqual(parseCSV(gh.read(LOG_CSV)).map(x => x.id), json.map(x => x.id));
+});
+
+test('commitLog with a cold cache fills it on the first save', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  await commitLog(repo, log => mergeSession(log, S, [{ reps: 20 }]), 'Log', { cache });
+  assert.equal(cache.head, gh.head);
+  const k = gh.calls.length;
+  await commitLog(repo, log => mergeSession(log, S, [{ reps: 21 }]), 'Log again', { cache });
+  assert.equal(since(gh, k).length, 4);
+});
+
+test('commitLog: another writer moved the branch since the cache → reload, their row survives', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  await loadLog(repo, null, cache);
+  const log = JSON.parse(gh.read(LOG_JSON));
+  log.unshift(entry({ id: 'from-action', date: '2026-11-06', machine_id: 'walk' }));
+  gh.write({ [LOG_JSON]: logToJSON(log), [LOG_CSV]: logToCSV(log) }, 'garmin post');
+  const k = gh.calls.length;
+  const seen = [];
+  await commitLog(repo, l => { seen.push(l.map(e => e.id)); return mergeSession(l, S, [{ reps: 20 }]); }, 'Log', { cache });
+  assert.ok(since(gh, k).some(isLogDownload), 'the log is downloaded again');
+  assert.deepEqual(seen, [['from-action', 'x1']]);
+  const ids = JSON.parse(gh.read(LOG_JSON)).map(e => e.id);
+  assert.ok(ids.includes('from-action'));
+  assert.equal(ids.length, 3);
+  assert.deepEqual(parseCSV(gh.read(LOG_CSV)).map(x => x.id), ids);
+  assert.equal(cache.head, gh.head);
+});
+
+test('commitLog with a cache: a write between our read and the ref update → retry from fresh data', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  await loadLog(repo, null, cache);
+  gh.hooks.beforePatchRef = () => {
+    const log = JSON.parse(gh.read(LOG_JSON));
+    log.push(entry({ id: 'from-coach', date: '2026-11-03' }));
+    gh.write({ [LOG_JSON]: logToJSON(log), [LOG_CSV]: logToCSV(log) }, 'coach');
+  };
+  let n = 0;
+  await commitLog(repo, l => { n++; return mergeSession(l, S, [{ reps: 20 }]); }, 'Log', { cache });
+  assert.equal(n, 2);
+  const ids = JSON.parse(gh.read(LOG_JSON)).map(e => e.id);
+  assert.ok(ids.includes('from-coach') && ids.includes('x1'));
+  assert.equal(ids.length, 3);
+  assert.deepEqual(cache.log.map(e => e.id), ids);
+});
+
+test('the cache keeps the file\'s stored order (not the app\'s date order)', async () => {
+  const stored = [entry({ id: 'old', date: '2026-01-01' }), entry({ id: 'new', date: '2026-11-01' }), entry({ id: 'mid', date: '2026-06-01' })];
+  const { gh, repo } = setup(stored);
+  const cache = newLogCache();
+  await loadLog(repo, null, cache);
+  assert.deepEqual(cache.log.map(e => e.id), ['old', 'new', 'mid']);
+  await commitLog(repo, log => [...log, entry({ id: 'added', date: '2026-11-05' })], 'Add', { cache });
+  assert.deepEqual(JSON.parse(gh.read(LOG_JSON)).map(e => e.id), ['old', 'new', 'mid', 'added']);
+  assert.deepEqual(cache.log.map(e => e.id), ['old', 'new', 'mid', 'added']);
+});
+
+test('the cache is a private copy: changing the returned log does not change the next save', async () => {
+  const { gh, repo } = setup();
+  const cache = newLogCache();
+  const { log } = await loadLog(repo, null, cache);
+  log[0].reps = 999;
+  const r = await commitLog(repo, l => mergeSession(l, S, [{ reps: 20 }]), 'Log', { cache });
+  r.log.forEach(e => { e.reps = 777; });
+  await commitLog(repo, l => l.concat(entry({ id: 'z', date: '2026-11-07' })), 'Add', { cache });
+  const json = JSON.parse(gh.read(LOG_JSON));
+  assert.ok(!json.some(e => e.reps === 999 || e.reps === 777));
+});
+
+test('commitFiles: contents go inline in the tree, no blob uploads', async () => {
+  const { gh, repo } = setup();
+  const k = gh.calls.length;
+  const head = await repo.headSha();
+  const r = await repo.commitFiles({ 'a.txt': 'Bodyweight — ✓\n', 'b.txt': 'b\n' }, 'two files', head);
+  assert.equal(gh.head, r.commit);
+  assert.equal(gh.read('a.txt'), 'Bodyweight — ✓\n');
+  assert.equal(gh.read('b.txt'), 'b\n');
+  assert.ok(!since(gh, k).some(c => c.includes('/git/blobs')));
 });
 
 test('tree: blob shas by path', async () => {

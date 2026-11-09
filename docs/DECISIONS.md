@@ -27,6 +27,14 @@ saw only the code rediscovered a deliberate decision as a bug.
   Sheets reads it with `IMPORTDATA`.
 - **A log save is one commit.** Two PUTs made two commits per save and could
   leave the JSON and CSV out of step.
+- **A save reuses the log it last loaded or saved** (0.2.2). The app caches the
+  log as stored in the file (file order, not the sorted view) with its commit and
+  tree sha. A save asks for the branch head first; only if it moved is the log
+  downloaded again. The file contents go inline in the `POST git/trees` request
+  (no blob uploads, no base64) with the cached tree as `base_tree`, so a save is
+  4 calls: GET ref, POST trees, POST commits, PATCH ref. A refused
+  (non-fast-forward) ref update still means reload and retry. Upload size still
+  grows with the log; only splitting the file would fix that.
 - **Stored data is neutral.** Heart rate is stored as 5-bpm buckets per activity;
   zones and HR-range goals are applied when shown.
 - **Classification:** an entry with speed, distance, heart rate, incline, zones or a Garmin link is cardio, whatever the machine. (LogTrim used heart rate and incline only; version 2 split `level` into speed and distance.)

@@ -13,7 +13,7 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
   const blobs = new Map();   // sha -> text
   const trees = new Map();   // sha -> Map(path -> blobSha)
   const commits = new Map(); // sha -> { tree, parents, message }
-  const calls = [];
+  const calls = [];  // { method, path, search }
   const hooks = { beforePatchRef: null, failNext: null };
 
   // Like git, a blob's sha comes from its content, so the same file has the same sha in any repo.
@@ -48,7 +48,7 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
   async function fetch(url, init = {}) {
     const method = init.method || 'GET';
     const u = new URL(url);
-    calls.push({ method, path: u.pathname });
+    calls.push({ method, path: u.pathname, search: u.search });
     if (hooks.failNext) { const f = hooks.failNext; hooks.failNext = null; return res(f.status, { message: f.message || 'fail' }); }
     const m = /^\/repos\/[^/]+\/[^/]+(\/.*)?$/.exec(u.pathname);
     if (!m) return res(404, { message: 'Not Found' });
@@ -64,8 +64,13 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
     }
     if (rest === '/git/blobs' && method === 'POST') return res(201, { sha: blob(dec(body.content)) });
     if (rest === '/git/trees' && method === 'POST') {
+      if (body.base_tree && !trees.has(body.base_tree)) return res(422, { message: 'base_tree is not a valid tree' });
       const m2 = new Map(body.base_tree ? trees.get(body.base_tree) : []);
-      for (const e of body.tree) e.sha == null ? m2.delete(e.path) : m2.set(e.path, e.sha);
+      for (const e of body.tree) {
+        if (typeof e.content === 'string') m2.set(e.path, blob(e.content)); // inline content: GitHub creates the blob
+        else if (e.sha == null) m2.delete(e.path);
+        else m2.set(e.path, e.sha);
+      }
       return res(201, { sha: mkTree(m2) });
     }
     if (rest === '/git/commits' && method === 'POST') return res(201, { sha: mkCommit(body.tree, body.parents, body.message) });

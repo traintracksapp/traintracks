@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (9 Nov 2026)
+
+- Saving a workout is faster. The app remembers the log it last loaded or saved, so a save no longer downloads the whole log again unless something else (another device, the coach, the Garmin Action) wrote to the repo in between. A save is now 4 GitHub calls instead of 8, and the files are sent as plain text rather than base64 (a third smaller).
+- Still one commit per save with the JSON and CSV together, and still reloads and re-applies your change if another writer got there first. The data format is unchanged.
+
 ## 0.2.1 (7 Nov 2026)
 
 **Spreadsheet users: the CSV columns changed.** `workout-log.csv` has a new `duration_min` column right after `duration_sec`, and the zone columns are now `zone1_min` … `zone5_min` (minutes) instead of `zone1_sec` … `zone5_sec`. Update formulas that refer to them by name or position.
