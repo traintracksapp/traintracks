@@ -136,6 +136,10 @@ nothing changes until you've checked it.
 - **"Repository not found"** when connecting: check the username and repository
   spelling, and that the token's repository access includes this repository.
 - **"GitHub 403"** when saving: the token lacks **Contents: Read and write**, or has expired.
+- **A red "not saved to GitHub yet" note** under the top bar: the change is kept
+  on this device and retried by itself. It says why (offline, token refused,
+  GitHub error). Tap it to retry now. Don't clear the browser's site data
+  until it has gone.
 - **Pages shows a 404:** the branch/folder setting in step 3 is wrong, or the
   first build hasn't finished (it can take a couple of minutes).
 - **A session saved on one device isn't on another:** Settings → **Reload data**.

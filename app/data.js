@@ -4,14 +4,16 @@
  *  - reads go through the Contents API (live, returns the sha a write needs);
  *  - single files are written with the sha they were loaded with, and on a
  *    conflict re-read and written again;
- *  - the log is written as one commit (lib/logstore.js), from a cached copy
- *    when the branch has not moved since it was loaded or last saved;
+ *  - log changes are shown at once, kept on the device and sent in the
+ *    background (lib/outbox.js); each send is one commit (lib/logstore.js),
+ *    from a cached copy when the branch has not moved since the last load or save;
  *  - raw.githubusercontent.com is used only for images (display) and the
  *    public gym catalog.
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
 import { loadLog as loadLogAt, commitLog as commitLogFiles, newLogCache } from '../lib/logstore.js';
-import { FILES, CATALOG, TEMPLATE } from '../lib/config.js';
+import { FILES, CATALOG, TEMPLATE, STORAGE } from '../lib/config.js';
+import { createOutbox, createSyncer, mergeOp, removeOp, moveOp, applyOp, applyOps, batchMessage } from '../lib/outbox.js';
 import { sortLog } from '../lib/log.js';
 import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
 import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
@@ -22,11 +24,42 @@ import { S, hasCfg } from './state.js';
 // load refreshes it; a save skips the download while the branch is unchanged.
 const logCache = newLogCache();
 
+// Unsent log changes for the connected repo, and the background sender.
+let outbox = null, syncer = null;
+const syncListeners = new Set();
+S.sync = { pending: 0, sending: false, error: null, failures: 0 };
+
+function storage() { try { return globalThis.localStorage || null; } catch { return null; } }
+
 export function connect() {
   Object.assign(logCache, newLogCache());
   S.repo = hasCfg() ? new GitHubRepo({ owner: S.cfg.user, repo: S.cfg.repo, token: S.cfg.token }) : null;
+  outbox = syncer = null;
+  if (S.repo) {
+    const r = S.repo;
+    outbox = createOutbox(storage(), `${STORAGE.outbox}:${S.cfg.user}/${S.cfg.repo}`.toLowerCase());
+    syncer = createSyncer({
+      outbox,
+      commit: ops => commitLogFiles(r, log => applyOps(log, ops), batchMessage(ops), { cache: logCache }),
+      // What GitHub now holds, plus anything queued meanwhile: other writers' rows appear too.
+      onSent: (res, remaining) => { if (res && r === S.repo) S.log = sortLog(applyOps(res.log, remaining)); },
+      onChange: st => { if (r === S.repo) setSync(st); }
+    });
+  }
+  setSync(syncer ? syncer.status() : { pending: 0, sending: false, error: null, failures: 0 });
   return S.repo;
 }
+
+function setSync(st) {
+  S.sync = st;
+  syncListeners.forEach(fn => { try { fn(st); } catch (e) { console.error(e); } });
+}
+
+/** Call fn(status) whenever the background save status changes: { pending, sending, error, failures }. */
+export function onSync(fn) { syncListeners.add(fn); fn(S.sync); }
+
+/** Send unsent log changes now (also retries after a failure). */
+export function syncNow() { return syncer ? syncer.flush() : Promise.resolve(); }
 
 function repo() {
   if (!S.repo) connect();
@@ -52,6 +85,7 @@ export async function loadAll(onStatus = () => {}) {
     await Promise.all([loadGyms(), loadLog(), loadProfile(), loadPlan(), loadGoals(), loadVersion(), loadWellness(), loadBuckets()]);
     S.loaded = true;
   } finally { S.loading = false; }
+  syncNow(); // changes left on this device (from before, or that failed to send)
 }
 
 export async function loadGyms() {
@@ -87,7 +121,8 @@ export const isOldFormat = log => log.some(e => e && ('machineId' in e || 'datet
 export async function loadLog() {
   const { log } = await loadLogAt(repo(), null, logCache);
   S.oldFormat = isOldFormat(log);
-  S.log = sortLog(log);
+  // Changes not sent yet stay visible on top of what was loaded.
+  S.log = sortLog(S.oldFormat || !outbox ? log : applyOps(log, outbox.list()));
 }
 
 export async function loadProfile() {
@@ -142,15 +177,24 @@ export function imageUrl(gym, file) {
 // -------------------------------------------------------------------- log ----
 
 /**
- * Apply a change to the log and commit JSON + CSV together. `apply(log)` must
- * work from the log it is given: after a conflict it runs again on a fresh copy.
+ * Log changes. Each one is applied to S.log at once, kept on the device and
+ * sent in the background; they return without waiting for GitHub. The
+ * background save status is S.sync (see onSync).
  */
-export async function commitLog(apply, message) {
+function queue(op) {
   if (S.oldFormat) throw new Error('This repository still has data in the old format. It must be migrated before the new app can save.');
-  const res = await commitLogFiles(repo(), log => apply(log), message, { cache: logCache });
-  if (res) S.log = sortLog(res.log);
+  repo();
+  S.log = sortLog(applyOp(S.log, op));
+  syncer.add(op).catch(e => console.error(e));
   return S.log;
 }
+
+/** Replace session `from` with `sets` as session `to` (a date or variant change moves it). */
+export const saveSession = (from, sets, to, message) => queue(mergeOp(S.log, from, sets, to, message));
+/** Delete a session. */
+export const deleteSession = (s, message) => queue(removeOp(s, message));
+/** Move a session to another machine: to = { gym_id, gym, room_id, room, machine_id, machine }. */
+export const moveSessionTo = (from, to, message) => queue(moveOp(from, to, message));
 
 // ------------------------------------------------------------ single files ---
 

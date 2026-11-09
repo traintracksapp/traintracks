@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.3 (9 Nov 2026)
+
+- **Saving no longer makes you wait.** Saving, editing, deleting or moving a session shows the change straight away and sends it to GitHub in the background. A small "Saving…" note shows under the top bar until GitHub has it.
+- Changes you save while one is still being sent go out together, in one commit.
+- If GitHub can't be reached (no signal, an expired token), the change is kept on this device, the note turns red, and the app keeps retrying: after a few seconds, then less often, when the connection comes back, and the next time you open the app. Tap the note to retry at once.
+- The change is replayed on the latest log when it is sent, so rows another device, the coach or the Garmin Action added in between are kept. If the same session was changed on two devices before either was sent, the one sent last wins.
+- Changes not sent yet stay on that device only. Keep the app open for a moment after your last save if you're about to lose signal. The data format is unchanged.
+
 ## 0.2.2 (9 Nov 2026)
 
 - Saving a workout is faster. The app remembers the log it last loaded or saved, so a save no longer downloads the whole log again unless something else (another device, the coach, the Garmin Action) wrote to the repo in between. A save is now 4 GitHub calls instead of 8, and the files are sent as plain text rather than base64 (a third smaller).

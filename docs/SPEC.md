@@ -457,7 +457,7 @@ Three writers share the log: the app (two Contents-API PUTs, JSON then CSV, each
 2. Create a commit with the base commit as its parent.
 3. Fast-forward `refs/heads/main` without `force`.
 
-A ref update that isn't a fast-forward (`422`) is the conflict signal: reload, re-apply, retry. Since 0.2.2 the app keeps the log it last loaded or saved (with its commit and tree sha) and downloads it again only when the branch head has moved, so a save is 4 calls (GET ref, POST trees, POST commits, PATCH ref). A fine-grained token with Contents: Read & write covers these endpoints. Single-file writes (`goals.json`, `profile.json`, gym files) may stay as Contents-API PUTs.
+A ref update that isn't a fast-forward (`422`) is the conflict signal: reload, re-apply, retry. Since 0.2.2 the app keeps the log it last loaded or saved (with its commit and tree sha) and downloads it again only when the branch head has moved, so a save is 4 calls (GET ref, POST trees, POST commits, PATCH ref). Since 0.2.3 log changes are queued on the device and sent in the background; each send is still one commit, carrying every change queued so far (`lib/outbox.js`, `docs/DECISIONS.md`). A fine-grained token with Contents: Read & write covers these endpoints. Single-file writes (`goals.json`, `profile.json`, gym files) may stay as Contents-API PUTs.
 
 ---
 

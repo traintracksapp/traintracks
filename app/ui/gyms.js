@@ -1,10 +1,10 @@
 /** Gym → rooms → machine grid → machine detail (history). */
 import { S } from '../state.js';
-import { html, act, setHTML, setText, on, toast, $, confirmDialog, showLoading, hideLoading, modal, closeModal } from './dom.js';
+import { html, act, setHTML, setText, on, toast, $, confirmDialog, modal, closeModal } from './dom.js';
 import { screen, nav } from './nav.js';
-import { imageUrl, commitLog } from '../data.js';
+import { imageUrl, deleteSession, moveSessionTo } from '../data.js';
 import { visibleCount } from '../../lib/gyms.js';
-import { lastSession, removeSession, machineSessions, garminIdOf, moveSession, zoneSeconds } from '../../lib/log.js';
+import { lastSession, machineSessions, garminIdOf, zoneSeconds } from '../../lib/log.js';
 import { zonesFromBuckets, cleanFloors } from '../../lib/goals.js';
 import { normalizeVariant } from '../../lib/variant.js';
 import { fmtLast, fmtSet, fmtDateFull, fmtClock } from '../../lib/format.js';
@@ -116,13 +116,12 @@ on('history-more', () => { S.historyAll = true; renderDetail(); });
 on('del-session', async d => {
   const ok = await confirmDialog('Delete session?', `${S.machine.name} on ${fmtDateFull(d.date)} will be removed from your log.`, { ok: 'Delete', danger: true });
   if (!ok) return;
-  showLoading('Deleting…');
   try {
     const s = { gym_id: S.gym.id, machine_id: S.machine.id, date: d.date, variant: normalizeVariant(d.v) };
-    await commitLog(log => removeSession(log, s), `Delete ${S.machine.name} ${d.date}`);
+    deleteSession(s, `Delete ${S.machine.name} ${d.date}`);
     toast('Session deleted', 'ok');
     renderDetail();
-  } catch (e) { toast(`Delete failed: ${e.message}`, 'err'); } finally { hideLoading(); }
+  } catch (e) { toast(`Delete failed: ${e.message}`, 'err'); }
 });
 
 // ---- move a session to another machine (e.g. a Garmin session posted to the wrong gym) ----
@@ -152,12 +151,11 @@ on('move-session-do', async () => {
   if (!m || !moving) return;
   closeModal();
   const to = { gym_id: g.id, gym: g.name, room_id: r.id, room: r.name, machine_id: m.id, machine: m.name };
-  showLoading('Moving…');
   try {
     const from = moving;
-    await commitLog(log => moveSession(log, from, to), `Move ${S.machine.name} ${from.date} to ${m.name}`);
+    moveSessionTo(from, to, `Move ${S.machine.name} ${from.date} to ${m.name}`);
     toast(`Moved to ${m.name} (${g.name})`, 'ok');
     renderDetail();
   } catch (e) { toast(`Move failed: ${e.message}`, 'err'); }
-  finally { hideLoading(); moving = null; }
+  finally { moving = null; }
 });

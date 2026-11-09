@@ -34,7 +34,22 @@ saw only the code rediscovered a deliberate decision as a bug.
   (no blob uploads, no base64) with the cached tree as `base_tree`, so a save is
   4 calls: GET ref, POST trees, POST commits, PATCH ref. A refused
   (non-fast-forward) ref update still means reload and retry. Upload size still
-  grows with the log; only splitting the file would fix that.
+  grows with the log; only splitting the file would fix that. If the log is
+  ever split, it is per year or per quarter, never per month (owner's decision,
+  9 Nov 2026).
+- **Log changes are saved in the background** (0.2.3). A save shows at once, is
+  stored on the device as an operation (replace a session, delete one, move one;
+  not a copy of the log) in localStorage under `tt-outbox:<user>/<repo>`, and a
+  single background sender commits it right away. Operations queued while a
+  send runs go out together in the next commit. They are replayed on the log at
+  the branch head, so other writers' rows survive, and replaying one twice gives
+  the same result, so a resend is harmless. Writes are sent at once rather than
+  held for a timed batch: a phone browser does not run code once the app is
+  closed or the screen is locked (iOS especially), and a change held back is a
+  change at risk. On a failure the queue retries with backoff, on `online`, when
+  the app comes back to the foreground, and after every load. A new set gets its
+  id when it is queued, so the id shown is the id saved. Last sender wins for a
+  session edited on two devices before either was sent.
 - **Stored data is neutral.** Heart rate is stored as 5-bpm buckets per activity;
   zones and HR-range goals are applied when shown.
 - **Classification:** an entry with speed, distance, heart rate, incline, zones or a Garmin link is cardio, whatever the machine. (LogTrim used heart rate and incline only; version 2 split `level` into speed and distance.)

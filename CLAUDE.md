@@ -33,7 +33,9 @@ This repo (`traintracksapp/traintracks`) is the **template** users copy with
 - Never read a file you will write back through raw.githubusercontent.com
   (5-minute cache). Read through the API, keep the sha, send it on write.
 - A log save is **one commit** (JSON + CSV together) via the Git Data API, with
-  reload-and-retry when the branch moved.
+  reload-and-retry when the branch moved. Screens never write the log directly:
+  they queue an operation (`saveSession` / `deleteSession` / `moveSessionTo` in
+  `app/data.js`) that is shown at once and sent in the background (`lib/outbox.js`).
 - One row per set. Session = gym_id + machine_id + date + variant. Saving replaces
   the session; changing the date moves it. Unknown entry fields survive edits.
 - `workout-log.csv` is read by header name, never by position.

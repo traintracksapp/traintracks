@@ -5,8 +5,8 @@
 import { S, hasCfg } from '../state.js';
 import { html, act, setHTML, setText, on, toast, $, qs, qsa } from './dom.js';
 import { screen, back, nav } from './nav.js';
-import { commitLog } from '../data.js';
-import { mergeSession, sessionEntries, lastSession } from '../../lib/log.js';
+import { saveSession } from '../data.js';
+import { sessionEntries, lastSession } from '../../lib/log.js';
 import { normalizeVariant, cleanTag } from '../../lib/variant.js';
 import { variationsOf } from '../../lib/gyms.js';
 import { columnsFor, rowValues, parseRow, paceText } from '../../lib/entryform.js';
@@ -122,10 +122,9 @@ async function save() {
   const time = (existing[0] && existing[0].time) || localTime();
   const notes = (($('lnotes') || {}).value || '').trim();
   const sets = fields.map((f, i) => ({ ...f, gym: gym.name, room_id: room.id, room: room.name, machine: m.name, time, notes: i === 0 ? notes : '' }));
-  const btn = $('svbtn');
-  btn.disabled = true; btn.textContent = 'Saving…';
   try {
-    await commitLog(log => mergeSession(log, from, sets, to), `${S.editSession ? 'Edit' : 'Log'} ${m.name} ${date}`);
+    // Shown at once; sent to GitHub in the background (see the save status pill).
+    saveSession(from, sets, to, `${S.editSession ? 'Edit' : 'Log'} ${m.name} ${date}`);
     toast('Session saved', 'ok');
     const fromPlan = S.fromPlan;
     S.fromPlan = false; S.editSession = null; S.logRows = null; S.logNotes = null;
@@ -134,7 +133,6 @@ async function save() {
   } catch (e) {
     console.error(e);
     toast(`Save failed: ${e.message}`, 'err');
-    btn.disabled = false; btn.textContent = S.editSession ? 'Save changes' : 'Save session';
   }
 }
 

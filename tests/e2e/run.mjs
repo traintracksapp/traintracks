@@ -51,6 +51,7 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(8089, r));
 
+let githubDown = false; // every GitHub API call fails while true
 const browser = await chromium.launch();
 const errors = [];
 async function openPage(colorScheme = 'dark') {
@@ -60,6 +61,7 @@ async function openPage(colorScheme = 'dark') {
   page.on('pageerror', e => errors.push(String(e)));
   await page.route(/https:\/\/api\.github\.com\/.*/, async route => {
     const req = route.request();
+    if (githubDown) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"down for the test"}' });
     const accept = req.headers().accept;
     const r = await fake.fetch(req.url(), { method: req.method(), headers: { Accept: accept }, body: req.postData() });
     const body = r.status === 204 ? '' : accept === 'application/vnd.github.raw+json' ? await r.text() : JSON.stringify(await r.json());
@@ -92,10 +94,13 @@ const readLog = () => JSON.parse(fake.read('workout-log.json') || '[]');
 const { ctx, page } = await openPage();
 const shot = async name => { await page.waitForTimeout(200); await page.screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-${name}.png`), fullPage: true }); };
 const text = async sel => (await page.textContent(sel)) || '';
+// Log saves return at once and are sent in the background: wait until GitHub has them.
+const waitSynced = () => page.waitForFunction(() => document.body.dataset.sync === 'idle', null, { timeout: 15000 });
 const waitToast = async () => {
   await page.waitForFunction(() => /saved|failed|deleted|editing/i.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
   const t = await text('#toast');
   await page.evaluate(() => { const t = document.getElementById('toast'); t.textContent = ''; t.className = ''; });
+  await waitSynced();
   return t;
 };
 async function goHome() { while (!(await page.$('#s-home.on'))) await page.click('.scr.on .back'); }
@@ -195,6 +200,7 @@ if (usingFixture) {
   await page.selectOption('#mvto', 'generic|cardio|treadmill');
   await page.click('[data-act="move-session-do"]');
   await page.waitForFunction(() => /Moved|failed/.test(document.getElementById('toast').textContent), null, { timeout: 15000 });
+  await waitSynced();
   const tmAfter = readLog().find(e => e.id === 'f4');
   check('session moved to the other machine', tmAfter.gym_id === 'generic' && tmAfter.machine_id === 'treadmill' && tmAfter.room_id === 'cardio' && tmAfter.machine === 'Treadmill');
   check('moved session keeps its fields', tmAfter.hr_avg_bpm === tmBefore.hr_avg_bpm && tmAfter.duration_sec === tmBefore.duration_sec && tmAfter.date === tmBefore.date);
@@ -328,6 +334,34 @@ await page.waitForFunction(() => /up to date|failed/i.test(document.getElementBy
 check('update check runs', /up to date/i.test(await text('#updstatus')), await text('#toast'));
 check('Garmin section present', (await text('#settingsbody')).includes('Run the Garmin sync now'));
 
+// 8c. Saving while GitHub can't be reached: shown at once, kept on the device, sent later
+if (usingFixture) {
+  await openMachineByName('Example Gym', 'Assisted Pull-up');
+  await page.click('[data-act="start-log"]');
+  const inputs = await page.$$('#stb input');
+  await inputs[0].fill('-90'); await inputs[1].fill('6');
+  for (const extra of (await page.$$('#stb tr')).slice(1)) await (await extra.$('[data-act="log-rm-row"]')).click();
+  githubDown = true;
+  const before = readLog().length;
+  await page.click('[data-act="log-save"]');
+  await page.waitForFunction(() => /saved/i.test(document.getElementById('toast').textContent), null, { timeout: 5000 });
+  check('save returns at once and the set is shown', (await text('#detailbody')).includes('90 lb assist'));
+  await page.waitForFunction(() => document.body.dataset.sync === 'error', null, { timeout: 15000 });
+  await shot('not-saved-yet');
+  check('the status pill says it is not on GitHub yet', /not saved to GitHub yet/i.test(await text('#syncpill')), await text('#syncpill'));
+  check('nothing reached GitHub', readLog().length === before && !readLog().some(e => e.weight_lb === -90));
+  check('the change is kept on the device', await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('tt-outbox:') && localStorage.getItem(k).includes('-90'))));
+  // Close and reopen the app with GitHub back: the change is sent.
+  githubDown = false;
+  page.once('dialog', d => d.accept()); // "leave with unsaved changes?" on a desktop browser
+  await page.reload();
+  await page.waitForFunction(() => !document.getElementById('ld').classList.contains('on'), null, { timeout: 20000 });
+  await waitSynced();
+  check('sent after reopening', readLog().some(e => e.machine_id === 'assist' && e.weight_lb === -90));
+  check('the pill is gone', await page.evaluate(() => document.getElementById('syncpill').hidden));
+  check('the queue is empty', await page.evaluate(() => !Object.keys(localStorage).some(k => k.startsWith('tt-outbox:'))));
+}
+
 await ctx.close();
 
 // 9. Light theme, and a repo still in the old format: banner, and saving refuses
@@ -343,7 +377,7 @@ await ctx2.close();
 await browser.close();
 server.close();
 
-const realErrors = errors.filter(e => !/Failed to load resource.*404/.test(e));
+const realErrors = errors.filter(e => !/Failed to load resource.*(404|503)/.test(e));
 check('no console errors (incl. Content-Security-Policy)', realErrors.length === 0, realErrors.join('\n'));
 const failed = results.filter(r => !r.ok);
 console.log(`${results.length - failed.length}/${results.length} checks passed; screenshots in ${SHOTS}`);

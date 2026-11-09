@@ -3,7 +3,7 @@
  * and loads the user's data from GitHub.
  */
 import { S, hasCfg, loadCfg } from './state.js';
-import { connect, loadAll } from './data.js';
+import { connect, loadAll, syncNow } from './data.js';
 import { wireDelegation, on, closeModal, toast, showLoading, hideLoading, $ } from './ui/dom.js';
 import { home } from './ui/nav.js';
 import { renderHome } from './ui/home.js';
@@ -16,6 +16,7 @@ import './ui/equipment.js';
 import './ui/profile.js';
 import { applyTheme } from './ui/settings.js';
 import './ui/updates.js';
+import './ui/sync.js';
 import { STORAGE, APP_VERSION } from '../lib/config.js';
 
 wireDelegation();
@@ -46,6 +47,7 @@ boot();
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
+  syncNow();
   if (!hasCfg() || !S.loaded || S.loading || Date.now() - hiddenAt < 10 * 60 * 1000) return;
   try { await loadAll(); if (S.stack.length === 1) renderHome(); } catch { /* quiet */ }
 });
