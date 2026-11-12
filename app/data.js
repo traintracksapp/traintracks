@@ -1,28 +1,39 @@
 /**
  * Everything the app reads from or writes to GitHub. Screens call these and
  * never touch the network themselves. Rules (docs/DECISIONS.md):
- *  - reads go through the Contents API (live, returns the sha a write needs);
+ *  - the app opens from the copy of the repo's files kept on this device
+ *    (lib/snapshot.js, app/devicestore.js), then asks GitHub for the branch
+ *    head; if it moved, the head's tree gives every file's blob sha and only
+ *    the files that changed are downloaded (raw text, by blob sha);
  *  - single files are written with the sha they were loaded with, and on a
  *    conflict re-read and written again;
  *  - log changes are shown at once, kept on the device and sent in the
  *    background (lib/outbox.js); each send is one commit (lib/logstore.js),
- *    from a cached copy when the branch has not moved since the last load or save;
+ *    from a cached copy when the log has not changed since the last load or save;
  *  - raw.githubusercontent.com is used only for images (display) and the
  *    public gym catalog.
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
-import { loadLog as loadLogAt, commitLog as commitLogFiles, newLogCache } from '../lib/logstore.js';
+import { commitLog as commitLogFiles, newLogCache, primeLogCache, parseLog } from '../lib/logstore.js';
 import { FILES, CATALOG, TEMPLATE, STORAGE } from '../lib/config.js';
 import { createOutbox, createSyncer, mergeOp, removeOp, moveOp, applyOp, applyOps, batchMessage } from '../lib/outbox.js';
 import { sortLog } from '../lib/log.js';
 import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
 import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
 import { convertGym } from '../lib/migrate.js';
+import { validSnapshot, toDownload, nextFiles, changedPaths, makeSnapshot, withFile, withLogSave } from '../lib/snapshot.js';
+import { readSnapshot, writeSnapshot } from './devicestore.js';
 import { S, hasCfg } from './state.js';
 
 // The log as stored in the file at a known commit (lib/logstore.js). Every
-// load refreshes it; a save skips the download while the branch is unchanged.
+// load refreshes it; a save skips the download while the log is unchanged.
 const logCache = newLogCache();
+
+// The files S was built from (lib/snapshot.js), as kept on the device.
+let snap = null;
+// Bumped after every background log save, so a load that was running at the
+// same time does not put the older log back on screen.
+let saves = 0;
 
 // Unsent log changes for the connected repo, and the background sender.
 let outbox = null, syncer = null;
@@ -30,11 +41,19 @@ const syncListeners = new Set();
 S.sync = { pending: 0, sending: false, error: null, failures: 0 };
 
 function storage() { try { return globalThis.localStorage || null; } catch { return null; } }
+const repoKey = () => `${S.cfg.user}/${S.cfg.repo}`.toLowerCase();
+
+function keep(next) {
+  snap = next;
+  if (snap && S.repo) writeSnapshot(repoKey(), snap);
+}
 
 export function connect() {
   Object.assign(logCache, newLogCache());
+  snap = null;
   S.repo = hasCfg() ? new GitHubRepo({ owner: S.cfg.user, repo: S.cfg.repo, token: S.cfg.token }) : null;
   outbox = syncer = null;
+  S.lastSyncError = readLastError();
   if (S.repo) {
     const r = S.repo;
     outbox = createOutbox(storage(), `${STORAGE.outbox}:${S.cfg.user}/${S.cfg.repo}`.toLowerCase());
@@ -42,7 +61,12 @@ export function connect() {
       outbox,
       commit: ops => commitLogFiles(r, log => applyOps(log, ops), batchMessage(ops), { cache: logCache }),
       // What GitHub now holds, plus anything queued meanwhile: other writers' rows appear too.
-      onSent: (res, remaining) => { if (res && r === S.repo) S.log = sortLog(applyOps(res.log, remaining)); },
+      onSent: (res, remaining) => {
+        if (!res || r !== S.repo) return;
+        saves++;
+        S.log = sortLog(applyOps(res.log, remaining));
+        if (snap) keep(withLogSave(snap, FILES.log, res));
+      },
       onChange: st => { if (r === S.repo) setSync(st); }
     });
   }
@@ -52,7 +76,19 @@ export function connect() {
 
 function setSync(st) {
   S.sync = st;
+  if (st.error) rememberError(st.error);
   syncListeners.forEach(fn => { try { fn(st); } catch (e) { console.error(e); } });
+}
+
+// The last background-save error, kept on the device for Settings (diagnosis).
+const errKey = () => `${STORAGE.lastError}:${repoKey()}`;
+function readLastError() {
+  try { const v = JSON.parse(storage().getItem(errKey()) || 'null'); return v && v.message ? v : null; } catch { return null; }
+}
+function rememberError(e) {
+  const v = { message: String(e.message || e), status: e.status || null, at: new Date().toISOString() };
+  S.lastSyncError = v;
+  try { storage().setItem(errKey(), JSON.stringify(v)); } catch { /* storage unavailable */ }
 }
 
 /** Call fn(status) whenever the background save status changes: { pending, sending, error, failures }. */
@@ -71,96 +107,148 @@ const json = v => JSON.stringify(v, null, 2) + '\n';
 
 // ---------------------------------------------------------------- loading ----
 
-export async function loadAll(onStatus = () => {}) {
-  const r = repo();
-  S.loading = true;
-  try {
-    onStatus('Checking repository…');
-    try { await r.info(); } catch (e) {
-      if (e.status === 404) throw new Error('Repository not found. Check the username and repository, and that the token can see it.');
-      if (e.status === 401) throw new Error('GitHub did not accept the token. Check it in Settings.');
-      throw e;
-    }
-    onStatus('Loading your data…');
-    await Promise.all([loadGyms(), loadLog(), loadProfile(), loadPlan(), loadGoals(), loadVersion(), loadWellness(), loadBuckets()]);
-    S.loaded = true;
-  } finally { S.loading = false; }
-  syncNow(); // changes left on this device (from before, or that failed to send)
-}
-
-export async function loadGyms() {
-  const r = repo();
-  const gyms = [];
-  S.sha.gym = {};
-  const [gen, local] = await Promise.all([r.getJSON(FILES.generic), r.getJSON(FILES.genericLocal)]);
-  S.genericLocal = local ? local.data : null;
-  S.sha.genericLocal = local ? local.sha : null;
-  if (gen) {
-    S.sha.gym[FILES.generic] = gen.sha;
-    const g = applyGenericOverrides(gen.data, S.genericLocal);
-    g._path = 'equipment/generic';
-    gyms.push(g);
-  }
-  const dirs = await r.listDir(FILES.myGyms);
-  const mine = await Promise.all(dirs.filter(d => d.type === 'dir').map(async d => {
-    const p = `${FILES.myGyms}/${d.name}/gym.json`;
-    try {
-      const f = await r.getJSON(p);
-      if (!f) return null;
-      S.sha.gym[p] = f.sha;
-      return { rooms: [], ...f.data, _path: `${FILES.myGyms}/${d.name}` };
-    } catch (e) { console.warn('gym', d.name, e); return null; }
-  }));
-  mine.filter(g => g && !g.removed).sort((a, b) => String(a.name).localeCompare(String(b.name))).forEach(g => gyms.push(g));
-  S.gyms = gyms;
-}
-
 /** True when a log still holds version 1 entries (LogTrim / 0.1.0 field names). */
 export const isOldFormat = log => log.some(e => e && ('machineId' in e || 'datetime' in e || 'gymId' in e));
 
-export async function loadLog() {
-  const { log } = await loadLogAt(repo(), null, logCache);
-  S.oldFormat = isOldFormat(log);
-  // Changes not sent yet stay visible on top of what was loaded.
-  S.log = sortLog(S.oldFormat || !outbox ? log : applyOps(log, outbox.list()));
+/** A JSON file's data, or `fallback` when it is absent or (with `tolerant`) unreadable. */
+function jsonOf(files, path, fallback, tolerant) {
+  const f = files[path];
+  if (!f) return fallback;
+  try { return JSON.parse(f.text); } catch (e) {
+    if (!tolerant) throw new Error(`${path} is not valid JSON: ${e.message}`);
+    console.warn(path, e);
+    return fallback;
+  }
 }
 
-export async function loadProfile() {
-  const f = await repo().getJSON(FILES.profile);
-  S.profile = f ? f.data || {} : {};
-  S.sha.profile = f ? f.sha : null;
+/** Build the app state from a set of files ({ path: { sha, text } }). `withLog` false keeps the log on screen. */
+function applyFiles(files, { head, tree, withLog = true } = {}) {
+  // gyms: the common gym with the user's changes, then the user's own gyms by name
+  const gyms = [];
+  const shaGym = {};
+  const gen = jsonOf(files, FILES.generic, null);
+  const local = jsonOf(files, FILES.genericLocal, null);
+  if (gen) {
+    shaGym[FILES.generic] = files[FILES.generic].sha;
+    gyms.push({ ...applyGenericOverrides(gen, local), _path: 'equipment/generic' });
+  }
+  const mine = [];
+  for (const p of Object.keys(files).filter(p => p.startsWith(`${FILES.myGyms}/`))) {
+    const g = jsonOf(files, p, null, true);
+    if (!g) continue;
+    shaGym[p] = files[p].sha;
+    mine.push({ rooms: [], ...g, _path: p.slice(0, -'/gym.json'.length) });
+  }
+  mine.filter(g => !g.removed).sort((a, b) => String(a.name).localeCompare(String(b.name))).forEach(g => gyms.push(g));
+
+  const sha = p => (files[p] ? files[p].sha : null);
+  const csv = (p, parse, empty) => { try { return files[p] ? parse(files[p].text) : empty; } catch (e) { console.warn(p, e); return empty; } };
+  const profile = jsonOf(files, FILES.profile, {});
+  let log = null;
+  if (withLog) log = parseLog(files[FILES.log] ? files[FILES.log].text : null);
+
+  // Everything parsed: now replace the state.
+  S.gyms = gyms;
+  S.genericLocal = local;
+  S.sha.genericLocal = sha(FILES.genericLocal);
+  S.sha.gym = shaGym;
+  S.profile = profile || {};
+  S.sha.profile = sha(FILES.profile);
+  S.plan = jsonOf(files, FILES.plan, null, true);
+  S.sha.plan = S.plan ? sha(FILES.plan) : null;
+  S.goals = jsonOf(files, FILES.goals, null, true);
+  S.sha.goals = sha(FILES.goals);
+  S.wellness = csv(FILES.wellness, parseWellnessCSV, []);
+  S.buckets = csv(FILES.buckets, parseBucketsCSV, {});
+  S.version = files[FILES.version] ? files[FILES.version].text.trim() : null;
+  if (withLog) {
+    S.oldFormat = isOldFormat(log);
+    // Changes not sent yet stay visible on top of what was loaded.
+    S.log = sortLog(S.oldFormat || !outbox ? log : applyOps(log, outbox.list()));
+    primeLogCache(logCache, { head, tree, sha: sha(FILES.log), text: files[FILES.log] ? files[FILES.log].text : null });
+  }
+  // Screens hold the gym, room and machine they show: point them at the new copies.
+  if (S.gym) S.gym = S.gyms.find(g => g.id === S.gym.id) || S.gym;
+  if (S.gym && S.room) S.room = (S.gym.rooms || []).find(r => r.id === S.room.id) || S.room;
+  if (S.room && S.machine) S.machine = (S.room.machines || []).find(m => m.id === S.machine.id) || S.machine;
 }
 
-export async function loadPlan() {
+/**
+ * Show the copy kept on this device, if there is one (no network). Returns
+ * true if the state now holds it. loadAll() then brings it up to date.
+ */
+export async function showFromDevice() {
+  if (!S.repo || S.loaded) return false;
+  const r = S.repo;
+  const s = validSnapshot(await readSnapshot(repoKey()));
+  if (!s || r !== S.repo || S.loaded) return false;
   try {
-    const f = await repo().getJSON(FILES.plan);
-    S.plan = f ? f.data : null;
-    S.sha.plan = f ? f.sha : null;
-  } catch (e) { console.warn('plan:', e); S.plan = null; S.sha.plan = null; }
+    applyFiles(s.files, { head: s.head, tree: s.tree });
+    snap = s;
+    S.loaded = true;
+    S.fromDevice = true;
+    return true;
+  } catch (e) { console.warn('device copy unreadable:', e); return false; }
 }
 
-export async function loadGoals() {
+/** Turn a failed first call into a message that says what to fix. */
+async function explain(r, e) {
+  if (e.status === 401) return new Error('GitHub did not accept the token. Check it in Settings.');
+  if (e.status === 404) {
+    try { await r.info(); } catch (e2) {
+      if (e2.status === 404) return new Error('Repository not found. Check the username and repository, and that the token can see it.');
+      if (e2.status === 401) return new Error('GitHub did not accept the token. Check it in Settings.');
+    }
+    return new Error(`The branch ${r.branch} was not found in the repository.`);
+  }
+  return e;
+}
+
+/**
+ * Bring the state up to date with GitHub: ask for the branch head; if it is
+ * the one the state was built from, nothing else is needed. Otherwise read
+ * the head's tree and download only the files whose blob sha changed.
+ * Resolves true if anything shown changed. `force`: download every file again
+ * (Settings → Reload), whatever the device copy says.
+ */
+export async function loadAll(onStatus = () => {}, { force = false } = {}) {
+  const r = repo();
+  S.loading = true;
+  let changed = false;
   try {
-    const f = await repo().getJSON(FILES.goals);
-    S.goals = f ? f.data : null;
-    S.sha.goals = f ? f.sha : null;
-  } catch (e) { console.warn('goals:', e); S.goals = null; }
+    onStatus('Checking repository…');
+    const gen = saves;
+    let head;
+    try { head = await r.headSha(); } catch (e) { throw await explain(r, e); }
+    if (force || !(snap && snap.head === head)) {
+      onStatus('Loading your data…');
+      const t = await r.treeAt(head);
+      const have = snap && !force ? snap.files : {};
+      const need = toDownload(t.files, have);
+      const got = Object.fromEntries(await Promise.all(need.map(async p => [p, await r.blobText(t.files[p])])));
+      if (r !== S.repo) return false;
+      let files = nextFiles(t.files, have, got);
+      let next = makeSnapshot(head, t.sha, files);
+      const logSent = saves !== gen && snap; // a save landed meanwhile: its log is newer than this one
+      if (logSent) {
+        files = { ...files };
+        if (snap.files[FILES.log]) files[FILES.log] = snap.files[FILES.log]; else delete files[FILES.log];
+        next = makeSnapshot(null, null, files);
+      }
+      changed = !snap || changedPaths(snap.files, files).length > 0;
+      applyFiles(files, { head, tree: t.sha, withLog: !logSent });
+      keep(next);
+    }
+    S.loaded = true;
+    S.fromDevice = false;
+  } finally { S.loading = false; }
+  syncNow(); // changes left on this device (from before, or that failed to send)
+  return changed;
 }
 
-/** Garmin outputs are optional and only displayed; a missing or unreadable file just means no data. */
-export async function loadWellness() {
-  try { const f = await repo().getText(FILES.wellness); S.wellness = f ? parseWellnessCSV(f.text) : []; }
-  catch (e) { console.warn('wellness:', e); S.wellness = []; }
-}
-
-export async function loadBuckets() {
-  try { const f = await repo().getText(FILES.buckets); S.buckets = f ? parseBucketsCSV(f.text) : {}; }
-  catch (e) { console.warn('buckets:', e); S.buckets = {}; }
-}
-
-export async function loadVersion() {
-  const f = await repo().getText(FILES.version);
-  S.version = f ? f.text.trim() : null;
+/** Remember a file the app just wrote itself, so the next open need not download it. */
+function wrote(path, text, sha) {
+  if (snap) keep(withFile(snap, path, text, sha));
 }
 
 // ----------------------------------------------------------------- images ----
@@ -201,12 +289,16 @@ export const moveSessionTo = (from, to, message) => queue(moveOp(from, to, messa
 /** Write one JSON file with the sha it was loaded with; on a conflict, re-read the sha and write again. */
 async function putJSON(path, data, sha, message) {
   const r = repo();
-  try { return await r.putFile(path, json(data), sha, message); }
+  const text = json(data);
+  let out;
+  try { out = await r.putFile(path, text, sha, message); }
   catch (e) {
     if (!isConflict(e)) throw e;
     const cur = await r.getText(path);
-    return r.putFile(path, json(data), cur ? cur.sha : null, message);
+    out = await r.putFile(path, text, cur ? cur.sha : null, message);
   }
+  wrote(path, text, out);
+  return out;
 }
 
 export async function saveGym(gym) {
@@ -237,6 +329,7 @@ export async function dismissPlan() {
   const cur = await r.getText(FILES.plan);
   if (cur) await r.deleteFile(FILES.plan, cur.sha, 'Dismiss workout plan');
   S.plan = null; S.sha.plan = null;
+  wrote(FILES.plan, null);
 }
 
 // ----------------------------------------------------------------- photos ----
@@ -293,8 +386,10 @@ export async function importCatalogGym(id, onStatus = () => {}) {
   delete gym.removed;
   const p = `${path}/gym.json`;
   const cur = await r.getText(p);
-  S.sha.gym[p] = await r.putFile(p, json(serialiseGym(gym)), cur ? cur.sha : null, `Import gym: ${gym.name}`);
-  await loadGyms();
+  const text = json(serialiseGym(gym));
+  S.sha.gym[p] = await r.putFile(p, text, cur ? cur.sha : null, `Import gym: ${gym.name}`);
+  wrote(p, text, S.sha.gym[p]);
+  if (snap) applyFiles(snap.files, { withLog: false }); else await loadAll();
 }
 
 /** Start the Garmin workflow (needs Actions: read & write on the token). */

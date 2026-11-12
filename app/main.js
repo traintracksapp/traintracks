@@ -3,9 +3,9 @@
  * and loads the user's data from GitHub.
  */
 import { S, hasCfg, loadCfg } from './state.js';
-import { connect, loadAll, syncNow } from './data.js';
+import { connect, loadAll, syncNow, showFromDevice } from './data.js';
 import { wireDelegation, on, closeModal, toast, showLoading, hideLoading, $ } from './ui/dom.js';
-import { home } from './ui/nav.js';
+import { home, refresh, current } from './ui/nav.js';
 import { renderHome } from './ui/home.js';
 import './ui/gyms.js';
 import './ui/logform.js';
@@ -26,30 +26,42 @@ try { applyTheme(localStorage.getItem(STORAGE.theme) || 'auto'); } catch { /* ig
 loadCfg();
 connect();
 
+// Screens that only show data, so they can be redrawn when newer data arrives.
+// Forms and editors are left alone: redrawing them would lose what is typed.
+const READ_ONLY = ['home', 'rooms', 'machines', 'detail', 'plan', 'reports'];
+
+/** Open from the copy on this device (if any) at once, then bring it up to date from GitHub. */
 async function boot() {
   home();
   if (!hasCfg()) return;
-  showLoading('Loading your data…');
+  document.body.dataset.load = 'loading';
+  const fromDevice = await showFromDevice();
+  if (fromDevice) { home(); document.body.dataset.load = 'device'; }
+  else showLoading('Loading your data…');
   try {
-    await loadAll(m => { $('ldmsg').textContent = m; });
-    home();
+    const changed = await loadAll(m => { if (!fromDevice) $('ldmsg').textContent = m; });
+    if (!fromDevice) home();
+    else if (changed && READ_ONLY.includes(current())) refresh();
+    document.body.dataset.load = 'fresh';
   } catch (e) {
     console.error(e);
-    toast(`Load error: ${e.message}`, 'err');
-    renderHome();
+    document.body.dataset.load = 'error';
+    if (fromDevice) toast(`Showing the copy on this device. GitHub: ${e.message}`, 'err');
+    else { toast(`Load error: ${e.message}`, 'err'); renderHome(); }
   } finally { hideLoading(); }
 }
 
 boot();
 
-// Coming back to the app after a while: reload, since another device, the
-// coach or a Garmin Action may have written to the repo.
+// Coming back to the app after a minute or more: check GitHub (one call when
+// nothing changed), since another device, the coach or a Garmin Action may
+// have written to the repo.
 let hiddenAt = 0;
 document.addEventListener('visibilitychange', async () => {
   if (document.hidden) { hiddenAt = Date.now(); return; }
   syncNow();
-  if (!hasCfg() || !S.loaded || S.loading || Date.now() - hiddenAt < 10 * 60 * 1000) return;
-  try { await loadAll(); if (S.stack.length === 1) renderHome(); } catch { /* quiet */ }
+  if (!hasCfg() || !S.loaded || S.loading || Date.now() - hiddenAt < 60 * 1000) return;
+  try { if (await loadAll() && READ_ONLY.includes(current())) refresh(); } catch { /* quiet */ }
 });
 
 console.log(`TrainTracks v${APP_VERSION}`);

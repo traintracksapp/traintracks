@@ -152,9 +152,9 @@ The owner's own repo is also the development reference: it carries the fully bui
 
 **Auth:** one fine-grained PAT per user, scoped to **only** their repo, with **Contents: Read and write** (plus **Actions: Read and write** if the user wants to trigger workflows from the coach or Worker). The app stores it in `localStorage` under one key, per browser, per device. LogTrim used `lt-cfg` (`{user, repo, token}`); TrainTracks 0.1.0 uses `tt-cfg`, `tt-remember`, `tt-celebrated` and `tt-theme`. **The rebuild keeps the `tt-` keys and reads 0.1.0's `tt-cfg` shape**, so devices already signed in at `traintracks.si` stay signed in after cut-over (same origin). The same token is pasted into the Claude Project instructions.
 
-**Reads:** the app reads its own repo's files through the Contents API (authenticated, always fresh, returns the blob `sha` needed for writes). Repos are public (D1), so the app may load read-only display assets from `raw.githubusercontent.com` (images, `daily-wellness.csv`, `cardio-buckets.csv`). Two cautions:
+**Reads:** the app reads its own repo's files through the authenticated API (always fresh, and it gives the blob `sha` needed for writes). Since 0.2.4 it opens from a copy of those files kept on the device, then asks for the branch head; if the head moved, one `git/trees/<head>?recursive=1` call gives every file's blob sha and only changed files are downloaded, as raw text by blob sha (no base64, no 1 MB Contents-API limit). Every API request is sent with `cache: 'no-cache'` (§16). Repos are public (D1), so the app may load read-only display assets from `raw.githubusercontent.com` (images). Two cautions:
 - Raw URLs can be ~5 minutes stale.
-- Any file the app may write must be read through the Contents API (§6.4).
+- Any file the app may write must be read through the API, never a raw URL (§6.4).
 
 **Writes:**
 - **Single-file writes** are a Contents-API `PUT` carrying the `sha` the app loaded.
@@ -704,6 +704,8 @@ Grouped so Claude Code can apply them without re-deriving them.
 ### GitHub API and hosting
 - **`raw.githubusercontent.com` caches for ~5 minutes and serves cached 404s for brand-new paths.** Never use it for anything you will write back, for freshness checks, or right after a push. The Contents API is always live and returns the `sha` you need anyway. (Both Oct 2026 "lost write" scares were this.)
 - Contents API PUTs need the current blob `sha` to overwrite; a missing/old sha → `409`/`422`. Keep the sha from the read; re-read on conflict.
+- **API answers carry `Cache-Control: private, max-age=60`** (seen on `GET git/ref/heads/main`), so a browser `fetch` without a cache mode can be handed a branch head up to a minute old. A save soon after another then builds on the old head and the ref update is refused (`422`, not a fast forward), and immediate retries get the same cached answer. Send every API request with `cache: 'no-cache'`: the browser revalidates with the ETag, and a `304` is cheap and not counted against the rate limit. (0.2.3's "3 changes not saved to GitHub yet (GitHub 422)" was this.)
+- The Contents API omits `content` for files over 1 MB (a second request with the raw media type is needed). `GET git/blobs/<sha>` with `Accept: application/vnd.github.raw+json` returns any blob as raw text in one call.
 - Fine-grained PAT scopes that bite: **Contents: Read & write** is required for the app and coach (a read-only or "Public repositories" token gives 403 on write); **Actions: Read & write** is required for `workflow_dispatch` — Contents does not cover it (`403 Resource not accessible by personal access token`).
 - `git/trees/<branch>?recursive=1` is the cheap way to diff two repos (blob shas); it is what the updater uses and it works unauthenticated on public repos.
 - A fork of a public repo can never be made private. "Use this template" produces an unrelated repo with the same tree.
@@ -757,7 +759,7 @@ Grouped so Claude Code can apply them without re-deriving them.
 ### Recommended shape
 - **Repo layout:** the static site lives at the **repo root**: `index.html` plus `js/` ES modules, no bundler. Pages serves only `/` or `/docs`, and the data files the app and Sheets use are at the root anyway. Then: `pipelines/garmin/` (Python, one scheduled workflow, gated by `GARMIN_ENABLED`); `scripts/` (migration, catalog tools); `tests/`; `docs/` (SETUP, COACH, DECISIONS, CHANGELOG); `CLAUDE.md`.
 - **Data layer:** one small module that owns all GitHub I/O. Everything else is pure. It handles:
-  - load: Contents API, with sha;
+  - load: the head's tree (blob shas) and raw blobs, from a device copy when one is kept (0.2.4);
   - save: sha-checked PUT for single files; a single-commit Git Data API write for the log, with retry on a non-fast-forward;
   - raw fetch for display-only assets;
   - tree diff.

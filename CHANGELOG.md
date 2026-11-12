@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.4 (12 Nov 2026)
+
+- **Fixed: "changes not saved to GitHub yet (GitHub 422)" after saving twice within a minute.** GitHub's answers may be kept by the browser for 60 seconds, so the second save was built on an out-of-date copy of the branch and refused, and the quick retries got the same old answer. Every request to GitHub now asks the browser to check with GitHub first.
+- **Opening the app is faster.** The app keeps a copy of your data on the device and shows it straight away, then checks GitHub in the background and downloads only the files that changed (as plain text, not base64). When nothing changed, that check is one small request. If anything did change, the screen updates by itself (forms you are filling in are left alone). Without storage on the device (a private window, for example) it loads from GitHub as before, just with fewer requests.
+- The status note under the top bar now shows GitHub's own message when a save fails (for example "GitHub 422: Update is not a fast forward"), and Settings keeps the last problem so it can be looked up later.
+- The data format is unchanged.
+
+Measured with `node tests/e2e/measure.mjs` (made-up repo of 1,700 log entries and 7 gyms; 8 Mbit/s down, 2 Mbit/s up, 120 ms round trips, CPU slowed 4x; app files are not cached by the model, so real repeat opens are a little faster still):
+
+| | 0.2.3 | 0.2.4 |
+|---|---|---|
+| First open on a device | 2.07 s, 20 GitHub calls, 158 KB | 1.69 s, 16 calls (in 3 rounds), 136 KB |
+| Opening again, nothing changed | 1.97 s, 20 calls | home in 0.84 s; checked in 1.04 s, 1 call |
+| Opening after another device changed one file | 1.93 s, 20 calls | home in 0.83 s; up to date in 1.56 s, 3 calls |
+| Save, until GitHub has it | 7.0 s (1.3 MB sent) | 7.0 s (unchanged: 0.3.0 addresses this) |
+
 ## 0.2.3 (9 Nov 2026)
 
 - **Saving no longer makes you wait.** Saving, editing, deleting or moving a session shows the change straight away and sends it to GitHub in the background. A small "Saving…" note shows under the top bar until GitHub has it.

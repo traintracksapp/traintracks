@@ -52,6 +52,8 @@ const server = http.createServer((req, res) => {
 await new Promise(r => server.listen(8089, r));
 
 let githubDown = false; // every GitHub API call fails while true
+let githubDelay = 0;     // ms added to every GitHub API answer
+let apiCalls = [];       // GitHub API calls, for counting
 const browser = await chromium.launch();
 const errors = [];
 async function openPage(colorScheme = 'dark') {
@@ -61,6 +63,8 @@ async function openPage(colorScheme = 'dark') {
   page.on('pageerror', e => errors.push(String(e)));
   await page.route(/https:\/\/api\.github\.com\/.*/, async route => {
     const req = route.request();
+    apiCalls.push(`${req.method()} ${new URL(req.url()).pathname.replace(/^\/repos\/[^/]+\/[^/]+/, '')}`);
+    if (githubDelay) await new Promise(r => setTimeout(r, githubDelay));
     if (githubDown) return route.fulfill({ status: 503, contentType: 'application/json', body: '{"message":"down for the test"}' });
     const accept = req.headers().accept;
     const r = await fake.fetch(req.url(), { method: req.method(), headers: { Accept: accept }, body: req.postData() });
@@ -349,6 +353,7 @@ if (usingFixture) {
   await page.waitForFunction(() => document.body.dataset.sync === 'error', null, { timeout: 15000 });
   await shot('not-saved-yet');
   check('the status pill says it is not on GitHub yet', /not saved to GitHub yet/i.test(await text('#syncpill')), await text('#syncpill'));
+  check('the pill shows GitHub\'s own message', /GitHub 503: down for the test/.test(await text('#syncpill')), await text('#syncpill'));
   check('nothing reached GitHub', readLog().length === before && !readLog().some(e => e.weight_lb === -90));
   check('the change is kept on the device', await page.evaluate(() => Object.keys(localStorage).some(k => k.startsWith('tt-outbox:') && localStorage.getItem(k).includes('-90'))));
   // Close and reopen the app with GitHub back: the change is sent.
@@ -360,6 +365,34 @@ if (usingFixture) {
   check('sent after reopening', readLog().some(e => e.machine_id === 'assist' && e.weight_lb === -90));
   check('the pill is gone', await page.evaluate(() => document.getElementById('syncpill').hidden));
   check('the queue is empty', await page.evaluate(() => !Object.keys(localStorage).some(k => k.startsWith('tt-outbox:'))));
+  await goHome();
+  await page.click('#s-home [data-act="nav"][data-to="settings"]');
+  check('Settings keeps the last save problem', /Last save problem \(.+\): (GitHub 503: down for the test|offline\?)/.test(await text('#settingsbody')), await text('#lastsyncerr'));
+
+  // 8d. Opening again: shown from the copy on this device at once, then checked against GitHub
+  const reopen = async () => {
+    apiCalls = [];
+    await page.goto('http://localhost:8089/');
+    await page.waitForFunction(() => document.querySelectorAll('#homebody .row').length > 0 && !document.getElementById('ld').classList.contains('on'), null, { timeout: 20000 });
+  };
+  githubDelay = 1500;
+  await reopen();
+  check('reopening shows the device copy before GitHub answers', await page.evaluate(() => document.body.dataset.load === 'device') && apiCalls.length <= 1, `${await page.evaluate(() => document.body.dataset.load)} ${apiCalls.join(', ')}`);
+  await page.waitForFunction(() => document.body.dataset.load === 'fresh', null, { timeout: 20000 });
+  githubDelay = 0;
+  await page.waitForTimeout(300);
+  check('nothing changed on GitHub: one call (the branch head)', apiCalls.length === 1 && apiCalls[0] === 'GET /git/ref/heads/main', apiCalls.join(', '));
+  // another device logs a set: the next open downloads only the log and shows the set
+  const ext = readLog();
+  ext.unshift({ ...ext.find(e => e.machine_id === 'r02'), id: 'from-other-device', date: '2026-11-08', set: 1, notes: 'logged on another device' });
+  fake.write({ 'workout-log.json': JSON.stringify(ext, null, 2) + '\n' }, 'another device');
+  await reopen();
+  await page.waitForFunction(() => document.body.dataset.load === 'fresh', null, { timeout: 20000 });
+  await page.waitForTimeout(300);
+  const blobs = apiCalls.filter(c => c.startsWith('GET /git/blobs/'));
+  check('only the changed file is downloaded, as a raw blob', blobs.length === 1 && apiCalls.length === 3 && !apiCalls.some(c => c.includes('/contents/')), apiCalls.join(', '));
+  await openMachineByName('Example Gym', 'Seated Row');
+  check('the other device\'s set is shown', (await text('#detailbody')).includes('logged on another device'));
 }
 
 await ctx.close();

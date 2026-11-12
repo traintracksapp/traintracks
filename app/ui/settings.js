@@ -5,6 +5,7 @@ import { screen, home, refresh } from './nav.js';
 import { connect, loadAll } from '../data.js';
 import { APP_VERSION, STORAGE } from '../../lib/config.js';
 import { renderHome, docUrl } from './home.js';
+import { errorText } from './sync.js';
 
 /** Extra settings sections registered by later features (updater, Garmin): fn() → html. */
 const extras = { top: null, sections: [] };
@@ -28,7 +29,7 @@ export async function doConnect() {
 
 export async function reload() {
   showLoading('Reloading…');
-  try { await loadAll(); toast('Data reloaded', 'ok'); refresh(); }
+  try { await loadAll(undefined, { force: true }); toast('Data reloaded', 'ok'); refresh(); }
   catch (e) { toast(`Reload failed: ${e.message}`, 'err'); }
   finally { hideLoading(); }
 }
@@ -65,6 +66,7 @@ function renderSettings() {
       <div class="sl" ${act('nav', { to: 'goals' })}><span>Weekly goals</span><span class="ch">›</span></div>
       <div class="sl" ${act('reload')}><span>Reload data from GitHub</span><span class="ch">↻</span></div>
     </div>
+    ${S.lastSyncError ? html`<p class="hint" id="lastsyncerr">Last save problem (${new Date(S.lastSyncError.at).toLocaleString()}): ${errorText(S.lastSyncError)}.${S.sync && S.sync.pending ? '' : ' Everything since has been saved.'}</p>` : ''}
     ${extras.sections.map(fn => fn())}
 
     <div class="sh">App</div>

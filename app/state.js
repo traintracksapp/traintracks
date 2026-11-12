@@ -20,6 +20,8 @@ export const S = {
   sha: { profile: null, plan: null, goals: null, genericLocal: null, gym: {} },
   loaded: false,
   loading: false,
+  fromDevice: false,     // showing the copy kept on this device; GitHub not checked yet
+  lastSyncError: null,   // { message, status, at }: the last background-save error (Settings)
   // navigation and screen state
   stack: ['home'],
   gym: null, room: null, machine: null,

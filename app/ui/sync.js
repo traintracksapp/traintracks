@@ -5,14 +5,19 @@
 import { on, toast, $ } from './dom.js';
 import { onSync, syncNow } from '../data.js';
 
+/** Why a send failed, in words, with GitHub's own message ("Update is not a fast forward"). */
+export function errorText(e) {
+  if (!e) return '';
+  const said = String(e.message || '').replace(/^GitHub \d+:?\s*/, '');
+  if (e.status === 401) return `GitHub did not accept the token${said ? `: ${said}` : ''}`;
+  if (e.status === 403) return `the token cannot write to the repository${said ? `: ${said}` : ''}`;
+  if (e.status) return `GitHub ${e.status}${said ? `: ${said}` : ''}`;
+  return `offline? ${said}`.trim();
+}
+
 function label(st) {
   const n = st.pending;
-  if (st.error) {
-    const why = st.error.status === 401 ? 'GitHub did not accept the token'
-      : st.error.status === 403 ? 'the token cannot write to the repository'
-      : st.error.status ? `GitHub ${st.error.status}` : 'offline?';
-    return `${n === 1 ? '1 change' : `${n} changes`} not saved to GitHub yet (${why}). Tap to retry.`;
-  }
+  if (st.error) return `${n === 1 ? '1 change' : `${n} changes`} not saved to GitHub yet (${errorText(st.error)}). Tap to retry.`;
   return n > 1 ? `Saving ${n} changes…` : 'Saving…';
 }
 

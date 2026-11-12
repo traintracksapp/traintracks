@@ -3,7 +3,13 @@
  * Supports the Contents API (GET/PUT/DELETE, ?ref=), the Git Data API
  * (refs, commits, trees, blobs) and repo info. Writes made with `write()`
  * stand in for another writer (a device, the coach, an Action).
+ *
+ * Like GitHub: blob shas are real git blob shas (sha1 of "blob <size>\0<content>"),
+ * trees can be read at any commit, tree or branch, blobs can be read raw, and the
+ * Contents API leaves `content` empty for files over 1 MB.
  */
+import { createHash } from 'node:crypto';
+
 const dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64), c => c.charCodeAt(0)));
 const enc = s => { const b = new TextEncoder().encode(s); let x = ''; b.forEach(c => { x += String.fromCharCode(c); }); return btoa(x); };
 
@@ -16,9 +22,13 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
   const calls = [];  // { method, path, search }
   const hooks = { beforePatchRef: null, failNext: null };
 
-  // Like git, a blob's sha comes from its content, so the same file has the same sha in any repo.
-  const hash = s => { let h1 = 0x811c9dc5, h2 = 0x01000193; for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = Math.imul(h2 ^ c, 2246822519) >>> 0; } return h1.toString(16).padStart(8, '0') + h2.toString(16).padStart(8, '0'); };
-  const blob = text => { const s = `b${hash(text)}`; blobs.set(s, text); return s; };
+  // As in git, a blob's sha comes from its content, so the same file has the same sha in any repo.
+  const blob = text => {
+    const b = Buffer.from(text, 'utf8');
+    const s = createHash('sha1').update(`blob ${b.length}\0`).update(b).digest('hex');
+    blobs.set(s, text);
+    return s;
+  };
   const mkTree = m => { const s = id('t'); trees.set(s, m); return s; };
   const mkCommit = (tree, parents, message) => { const s = id('c'); commits.set(s, { tree, parents, message }); return s; };
 
@@ -80,8 +90,17 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
       head = body.sha;
       return res(200, { object: { sha: head } });
     }
-    if (rest.startsWith('/git/trees/')) {
-      return res(200, { tree: [...filesAt(null)].map(([path, sha]) => ({ path, type: 'blob', sha })) });
+    if (rest.startsWith('/git/trees/') && method === 'GET') {
+      const r = decodeURIComponent(rest.slice('/git/trees/'.length));
+      const tsha = r === branch ? commits.get(head).tree : commits.has(r) ? commits.get(r).tree : trees.has(r) ? r : null;
+      if (!tsha) return res(404, { message: 'Not Found' });
+      return res(200, { sha: tsha, truncated: false, tree: [...trees.get(tsha)].map(([path, sha]) => ({ path, mode: '100644', type: 'blob', sha })) });
+    }
+    if (rest.startsWith('/git/blobs/') && method === 'GET') {
+      const s = rest.slice('/git/blobs/'.length);
+      if (!blobs.has(s)) return res(404, { message: 'Not Found' });
+      if ((init.headers || {}).Accept === 'application/vnd.github.raw+json') return res(200, blobs.get(s));
+      return res(200, { sha: s, encoding: 'base64', content: enc(blobs.get(s)) });
     }
     if (rest.startsWith('/actions/workflows/')) return res(204, null);
     if (rest.startsWith('/contents/')) {
@@ -92,7 +111,8 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
         if (files.has(path)) {
           const s = files.get(path), text = blobs.get(s);
           if ((init.headers || {}).Accept === 'application/vnd.github.raw+json') return res(200, text);
-          return res(200, { path, sha: s, content: enc(text) });
+          // Over 1 MB the Contents API sends no content; the raw media type is needed.
+          return res(200, { path, sha: s, content: Buffer.byteLength(text) > 1024 * 1024 ? '' : enc(text) });
         }
         const prefix = path ? path + '/' : '';
         const kids = new Map();

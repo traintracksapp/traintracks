@@ -52,5 +52,7 @@ This repo (`traintracksapp/traintracks`) is the **template** users copy with
 - `npm test` runs the JavaScript tests (node:test); `npm run test:py` the Python ones.
 - `node tests/e2e/run.mjs [data-dir] [shots-dir]`: browser smoke test against an in-memory
   GitHub seeded from a folder (default: the made-up fixture). Only ever point it at a COPY.
+- `node tests/e2e/measure.mjs [app-dir]`: open and save timings on a modelled phone link
+  (made-up 1,700-entry repo). Point it at a `git worktree` of an older commit to compare.
 - Keep `CHANGELOG.md` and `VERSION` in step.
 - Commit messages: imperative, one line, no emoji. Stage explicit paths.

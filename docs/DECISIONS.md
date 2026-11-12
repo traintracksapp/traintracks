@@ -29,8 +29,9 @@ saw only the code rediscovered a deliberate decision as a bug.
   leave the JSON and CSV out of step.
 - **A save reuses the log it last loaded or saved** (0.2.2). The app caches the
   log as stored in the file (file order, not the sorted view) with its commit and
-  tree sha. A save asks for the branch head first; only if it moved is the log
-  downloaded again. The file contents go inline in the `POST git/trees` request
+  tree sha. A save asks for the branch head first; only if it moved is the head's
+  tree read, and only if the log file's blob sha changed is the log downloaded
+  again (0.2.4). The file contents go inline in the `POST git/trees` request
   (no blob uploads, no base64) with the cached tree as `base_tree`, so a save is
   4 calls: GET ref, POST trees, POST commits, PATCH ref. A refused
   (non-fast-forward) ref update still means reload and retry. Upload size still
@@ -50,6 +51,27 @@ saw only the code rediscovered a deliberate decision as a bug.
   the app comes back to the foreground, and after every load. A new set gets its
   id when it is queued, so the id shown is the id saved. Last sender wins for a
   session edited on two devices before either was sent.
+- **The app opens from a copy kept on the device** (0.2.4). The last loaded
+  files (the log as stored, gyms, profile, goals, plan, wellness, buckets,
+  VERSION) and their blob shas are kept in IndexedDB per repo
+  (`lib/snapshot.js`, `app/devicestore.js`). Opening shows that copy at once
+  (with unsent changes on top), then asks for the branch head. Unchanged head:
+  done, one call. Moved head: one `git/trees/<head>?recursive=1` call gives every
+  file's blob sha and only the files whose sha changed are downloaded, raw, by
+  blob sha. Screens that only show data are redrawn if anything changed; forms
+  are not (that would lose what is typed). Everything is best effort: with no
+  IndexedDB (a private window, a full disk) the app loads from GitHub as before.
+  The repo info call is no longer made before loading; it is made only to
+  explain a 404 (repo missing, or the branch). The device copy records a head
+  only when every file in it is known to match that commit: after the app writes
+  a single file, or saves the log on top of a newer head, the head is cleared and
+  the next open compares the tree.
+- **Every GitHub API request uses `cache: 'no-cache'`** (0.2.4). Not `no-store`:
+  revalidating with the ETag keeps the 304s cheap. See "GitHub facts".
+- **The last background-save error is kept** (0.2.4) in localStorage under
+  `tt-last-sync-error:<user>/<repo>` and shown in Settings, and the status pill
+  shows GitHub's own message ("GitHub 422: Update is not a fast forward"), so a
+  failure can be diagnosed after the fact.
 - **Stored data is neutral.** Heart rate is stored as 5-bpm buckets per activity;
   zones and HR-range goals are applied when shown.
 - **Classification:** an entry with speed, distance, heart rate, incline, zones or a Garmin link is cardio, whatever the machine. (LogTrim used heart rate and incline only; version 2 split `level` into speed and distance.)
@@ -75,6 +97,13 @@ saw only the code rediscovered a deliberate decision as a bug.
   paths. Never read through it what you will write back.
 - Contents API writes need the current blob sha; a stale one gives 409 (sometimes
   422). A Git Data API ref update that is not a fast-forward gives 422.
+- API answers carry `Cache-Control: private, max-age=60`. A browser `fetch`
+  without a cache mode may get a branch head up to a minute old, so a save soon
+  after another one is refused (422) and quick retries get the same stale
+  answer. Every request sends `cache: 'no-cache'` (0.2.4).
+- The Contents API leaves out `content` for files over 1 MB; `git/blobs/<sha>`
+  with `Accept: application/vnd.github.raw+json` returns raw text of any size.
+  A file's blob sha in a tree is the sha a Contents-API PUT needs.
 - Fine-grained tokens: Contents read/write for the app and coach; Actions
   read/write to dispatch workflows.
 - Pages serves only the repo root or `/docs`, and rebuilds on every commit to
