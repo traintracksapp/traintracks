@@ -26,12 +26,19 @@ Conventions:
     Strength training is never posted (those sessions are logged as sets).
   * Activities overlapping a hand-logged timed entry are skipped for review.
   * Log order: date blocks newest first, entries within a day by time.
-  * Both files are written exactly as the app writes them (logfmt.py).
+  * The log is written exactly as the app writes it (logfmt.py), in the repo's layout:
+      - log/YYYY-MM.json (format version 3, `--log-dir log`): only the months that
+        get a new row are written; build-csv.yml rebuilds workout-log.csv;
+      - workout-log.json + workout-log.csv (a repo not split yet, `--log-json` / `--log-csv`).
+    A repo that has been split but still runs the old garmin.yml (which passes
+    --log-json and commits only workout-log.*) is refused with a message, since
+    the rows it wrote under log/ would never be committed.
 
 Usage:
-  python post_zone_records.py --cardio cardio-minutes.csv --log-json workout-log.json \
-      --log-csv workout-log.csv [--garmin garmin-recent.json] --zones pipelines/garmin/zones.json \
+  python post_zone_records.py --cardio cardio-minutes.csv --log-dir log \
+      [--garmin garmin-recent.json] --zones pipelines/garmin/zones.json \
       [--since YYYY-MM-DD] [--activity-ids ID ...] [--mapping mapping.json] [--dry-run]
+  (0.2.x workflows: --log-json workout-log.json --log-csv workout-log.csv instead of --log-dir)
 """
 from __future__ import annotations
 
@@ -74,7 +81,13 @@ OTHER_CARDIO = "other-cardio"
 NEVER_POST = {"strength_training"}
 NAME_SUFFIXES = ("Cycling", "Running", "Walking", "Hiking", "Ride", "Run", "Walk")
 
-from logfmt import new_id, round2, to_csv, to_json  # noqa: E402
+from logfmt import new_id, round2, to_csv, to_json, has_months, read_months, join_months, write_months, LOG_DIR, LEGACY_LOG  # noqa: E402
+
+SPLIT_BUT_OLD_WORKFLOW = (
+    "This repo's log is split into monthly files (log/), but the workflow still asks for "
+    "workout-log.json and would not commit the new rows. Nothing was posted. Replace "
+    ".github/workflows/garmin.yml with the template's (TrainTracks 0.3.0; see "
+    "'Upgrading to 0.3.0' in docs/SETUP.md); the activities are posted on the next run.")
 
 
 def garmin_id_of(e: dict) -> str | None:
@@ -379,8 +392,9 @@ def plan_entries(cardio_rows, log_entries, garmin_meta, mapping, rhr, hrmax, sin
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cardio", required=True)
-    ap.add_argument("--log-json", required=True)
-    ap.add_argument("--log-csv", required=True)
+    ap.add_argument("--log-dir", help="the month files (format version 3): log")
+    ap.add_argument("--log-json", help="0.2.x workflows: workout-log.json (used only while the repo is not split)")
+    ap.add_argument("--log-csv", help="0.2.x workflows: workout-log.csv (used only while the repo is not split)")
     ap.add_argument("--garmin")
     ap.add_argument("--zones", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "zones.json"))
     ap.add_argument("--since")
@@ -396,7 +410,27 @@ def main() -> int:
         return 0
     with open(args.cardio, newline="") as f:
         cardio = list(csv.DictReader(f))
-    log_entries = read_json(args.log_json) if os.path.exists(args.log_json) else []
+    # Which layout the repo's log is in (docs/DATA-FORMAT.md).
+    log_dir = args.log_dir or LOG_DIR
+    log_json = args.log_json or LEGACY_LOG
+    log_csv = args.log_csv or "workout-log.csv"
+    if has_months(log_dir):
+        if not args.log_dir:
+            print(SPLIT_BUT_OLD_WORKFLOW, file=sys.stderr)
+            return 1
+        layout = "months"
+        months = read_months(log_dir)
+        log_entries = join_months(months)
+        if os.path.exists(log_json):
+            print(f"note: {log_json} is still in the repo next to {log_dir}/; it is ignored (the months are the log)")
+    elif os.path.exists(log_json) or not args.log_dir:
+        layout = "single"
+        months = {}
+        log_entries = read_json(log_json) if os.path.exists(log_json) else []
+    else:
+        layout = "months"
+        months = {}
+        log_entries = []
     with open(args.zones, encoding="utf-8") as f:
         zcfg = json.load(f)
     rhr, hrmax = float(zcfg["rhr_bpm"]), float(zcfg["hr_max_bpm"])
@@ -431,13 +465,17 @@ def main() -> int:
     for _, _, entry, _, _ in posted:
         log_entries.insert(insertion_index(log_entries, entry), entry)
     if any("machineId" in e or "datetime" in e for e in log_entries[:50]):
-        print("workout-log.json is still in the old format; not posting until it is migrated")
+        print("the log is still in the old format; not posting until it is migrated")
         return 0
-    with open(args.log_json, "w", encoding="utf-8", newline="") as f:
+    if layout == "months":
+        touched = write_months(log_dir, months, log_entries)
+        print(f"wrote {len(posted)} new entries → {', '.join(f'{log_dir}/{n}' for n in touched)} ({len(log_entries)} entries in all); build-csv.yml rebuilds workout-log.csv")
+        return 0
+    with open(log_json, "w", encoding="utf-8", newline="") as f:
         f.write(to_json(log_entries))
-    with open(args.log_csv, "w", encoding="utf-8", newline="") as f:
+    with open(log_csv, "w", encoding="utf-8", newline="") as f:
         f.write(to_csv(log_entries))
-    print(f"wrote {len(posted)} new entries → {args.log_json} ({len(log_entries)} entries) and {args.log_csv}")
+    print(f"wrote {len(posted)} new entries → {log_json} ({len(log_entries)} entries) and {log_csv} (not split into months yet)")
     return 0
 
 

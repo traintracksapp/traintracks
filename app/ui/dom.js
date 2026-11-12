@@ -50,8 +50,9 @@ export function wireDelegation() {
     const fn = actions.get(el.dataset.act);
     if (!fn) return;
     e.preventDefault();
-    try { const r = fn({ ...el.dataset }, el, e); if (r && r.catch) r.catch(err => { console.error(err); toast(err.message || String(err), 'err'); }); }
-    catch (err) { console.error(err); toast(err.message || String(err), 'err'); }
+    const failed = err => { if (!err || !err.refused) console.error(err); toast((err && err.message) || String(err), 'err'); };
+    try { const r = fn({ ...el.dataset }, el, e); if (r && r.catch) r.catch(failed); }
+    catch (err) { failed(err); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 }

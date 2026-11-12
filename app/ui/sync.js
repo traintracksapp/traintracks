@@ -12,7 +12,8 @@ export function errorText(e) {
   if (e.status === 401) return `GitHub did not accept the token${said ? `: ${said}` : ''}`;
   if (e.status === 403) return `the token cannot write to the repository${said ? `: ${said}` : ''}`;
   if (e.status) return `GitHub ${e.status}${said ? `: ${said}` : ''}`;
-  return `offline? ${said}`.trim();
+  if (e.name === 'TypeError' || !said) return `offline? ${said}`.trim(); // fetch() could not reach GitHub
+  return said;
 }
 
 function label(st) {

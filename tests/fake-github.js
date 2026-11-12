@@ -143,6 +143,7 @@ export function createFakeGitHub(initial = {}, { branch = 'main' } = {}) {
   return {
     fetch, calls, hooks, write,
     read: p => { const s = filesAt(null).get(p); return s == null ? null : blobs.get(s); },
+    paths: () => [...filesAt(null).keys()].sort(),
     get head() { return head; },
     commitCount: () => { let k = 0, s = head; while (s) { k++; s = commits.get(s).parents[0]; } return k; },
     lastMessage: () => commits.get(head).message

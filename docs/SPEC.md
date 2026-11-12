@@ -171,6 +171,8 @@ All paths are relative to the user's repo root. JSON files are pretty-printed; C
 
 ### 4.1 `workout-log.json` — the log (authoritative)
 
+> **Since TrainTracks 0.3.0 (format version 3)** the log is stored as one file per month, `log/YYYY-MM.json` (one entry per line), and `workout-log.json` is retired; `workout-log.csv` is rebuilt from the months by a GitHub Action and may lag by about a minute. Entry fields are unchanged. `docs/DATA-FORMAT.md` is the authority; this section describes the version 1 file the migration reads.
+
 A JSON **array** of entries, one per **set** (not per session). Version 1 keys, verified 5 Nov 2026 against a real log:
 
 ```json
@@ -450,6 +452,8 @@ Remove all existing entries for that machine+date, insert the new sets in their 
 - Bodyweight goals count only the listed `machineIds` (leg press does not count toward squats).
 
 ### 6.4 Concurrency
+> **0.3.0:** a log save is one commit of only the month files it changes (`log/YYYY-MM.json`), built on the branch head with reload-and-retry on a non-fast-forward; the Garmin Action writes only the months that get a row; the Worker's `/log-write` takes the whole log and writes only the changed months; `workout-log.csv` is rebuilt by the `build-csv` Action. See `docs/DECISIONS.md`.
+
 Three writers share the log: the app (two Contents-API PUTs, JSON then CSV, each with the `sha` it loaded; retries once on `409` by reloading and re-applying the change — `commitLog(apply)`), the Garmin Action (one `git push` writing both files atomically; pulls with `--rebase --autostash` first) and the Worker's `/log-write` (requires `baseJsonSha`/`baseCsvSha` from a live `/log-json` read; `409` + `stale` list if either moved; `400` if JSON and CSV disagree; refuses to shrink the entry count unless `allowShrink`). **Two incidents in Oct 2026 where a session "restored a lost write" turned out to be stale reads from `raw.githubusercontent.com` (≈5-minute cache), not lost writes.** Rule: *never read a file you intend to write through a raw URL; always through the Contents API, and always send the base sha.*
 
 **Rebuild requirement: one commit per log save.** Today's two PUTs make two commits per save; that is about half of a typical personal repo's commits. If the second PUT fails, the JSON and CSV disagree. The app must write both files in one commit through the Git Data API:

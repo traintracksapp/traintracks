@@ -61,10 +61,16 @@ def read(path):
 def rows(text):
     return list(csv.DictReader(io.StringIO(text or "")))
 
-log      = rows(read("workout-log.csv"))   # one row per set, newest first
+log      = rows(read("workout-log.csv"))   # one row per set, newest first (may be ~1 min behind the app)
 profile  = json.loads(read("profile.json") or "{}")
 goals    = json.loads(read("goals.json") or "{}")
 ```
+
+`workout-log.csv` is rebuilt from the log about a minute after each change, so
+a session saved in the last minute may not be in it yet. If it matters (say,
+"I just logged my rows"), read this month's file instead: the log itself is one
+JSON file per month, `log/YYYY-MM.json` (e.g. `log/2026-11.json`), a list of
+entries with the same field names as the CSV columns.
 
 **Read every CSV by column name** (`csv.DictReader`), never by position:
 columns can be added. `workout-log.csv` columns include:

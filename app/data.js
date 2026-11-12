@@ -7,14 +7,18 @@
  *    the files that changed are downloaded (raw text, by blob sha);
  *  - single files are written with the sha they were loaded with, and on a
  *    conflict re-read and written again;
- *  - log changes are shown at once, kept on the device and sent in the
- *    background (lib/outbox.js); each send is one commit (lib/logstore.js),
- *    from a cached copy when the log has not changed since the last load or save;
+ *  - the log is one file per month (lib/months.js); log changes are shown at
+ *    once, kept on the device and sent in the background (lib/outbox.js); each
+ *    send is one commit of the changed months only (lib/logstore.js), from a
+ *    cached copy of the months that have not changed since the last load or save;
+ *  - a repo whose log is still one file (workout-log.json) is shown, but
+ *    saving is off until it is split (scripts/split-log.mjs);
  *  - raw.githubusercontent.com is used only for images (display) and the
  *    public gym catalog.
  */
 import { GitHubRepo, isConflict } from '../lib/github.js';
-import { commitLog as commitLogFiles, newLogCache, primeLogCache, parseLog } from '../lib/logstore.js';
+import { commitLog as commitLogFiles, newLogCache, primeLogCache } from '../lib/logstore.js';
+import { logLayout } from '../lib/months.js';
 import { FILES, CATALOG, TEMPLATE, STORAGE } from '../lib/config.js';
 import { createOutbox, createSyncer, mergeOp, removeOp, moveOp, applyOp, applyOps, batchMessage } from '../lib/outbox.js';
 import { sortLog } from '../lib/log.js';
@@ -25,8 +29,8 @@ import { validSnapshot, toDownload, nextFiles, changedPaths, makeSnapshot, withF
 import { readSnapshot, writeSnapshot } from './devicestore.js';
 import { S, hasCfg } from './state.js';
 
-// The log as stored in the file at a known commit (lib/logstore.js). Every
-// load refreshes it; a save skips the download while the log is unchanged.
+// The log's month files as stored, at a known commit (lib/logstore.js). Every
+// load refreshes it; a save downloads only months that changed meanwhile.
 const logCache = newLogCache();
 
 // The files S was built from (lib/snapshot.js), as kept on the device.
@@ -65,7 +69,7 @@ export function connect() {
         if (!res || r !== S.repo) return;
         saves++;
         S.log = sortLog(applyOps(res.log, remaining));
-        if (snap) keep(withLogSave(snap, FILES.log, res));
+        if (snap) keep(withLogSave(snap, res));
       },
       onChange: st => { if (r === S.repo) setSync(st); }
     });
@@ -76,7 +80,8 @@ export function connect() {
 
 function setSync(st) {
   S.sync = st;
-  if (st.error) rememberError(st.error);
+  if (st.error && st.error !== lastErr) rememberError(st.error);
+  lastErr = st.error;
   syncListeners.forEach(fn => { try { fn(st); } catch (e) { console.error(e); } });
 }
 
@@ -85,8 +90,9 @@ const errKey = () => `${STORAGE.lastError}:${repoKey()}`;
 function readLastError() {
   try { const v = JSON.parse(storage().getItem(errKey()) || 'null'); return v && v.message ? v : null; } catch { return null; }
 }
+let lastErr = null;
 function rememberError(e) {
-  const v = { message: String(e.message || e), status: e.status || null, at: new Date().toISOString() };
+  const v = { message: String(e.message || e), status: e.status || null, name: e.name || null, at: new Date().toISOString() };
   S.lastSyncError = v;
   try { storage().setItem(errKey(), JSON.stringify(v)); } catch { /* storage unavailable */ }
 }
@@ -107,6 +113,8 @@ const json = v => JSON.stringify(v, null, 2) + '\n';
 
 // ---------------------------------------------------------------- loading ----
 
+const isLogPath = p => p === FILES.legacyLog || p.startsWith(`${FILES.logDir}/`);
+
 /** True when a log still holds version 1 entries (LogTrim / 0.1.0 field names). */
 export const isOldFormat = log => log.some(e => e && ('machineId' in e || 'datetime' in e || 'gymId' in e));
 
@@ -122,7 +130,7 @@ function jsonOf(files, path, fallback, tolerant) {
 }
 
 /** Build the app state from a set of files ({ path: { sha, text } }). `withLog` false keeps the log on screen. */
-function applyFiles(files, { head, tree, withLog = true } = {}) {
+function applyFiles(files, { head, tree, withLog = true, legacyToo = false } = {}) {
   // gyms: the common gym with the user's changes, then the user's own gyms by name
   const gyms = [];
   const shaGym = {};
@@ -145,7 +153,9 @@ function applyFiles(files, { head, tree, withLog = true } = {}) {
   const csv = (p, parse, empty) => { try { return files[p] ? parse(files[p].text) : empty; } catch (e) { console.warn(p, e); return empty; } };
   const profile = jsonOf(files, FILES.profile, {});
   let log = null;
-  if (withLog) log = parseLog(files[FILES.log] ? files[FILES.log].text : null);
+  // The log: the month files (or the old single file, until it is split). Parsed into a scratch cache first.
+  const scratch = newLogCache();
+  if (withLog) log = primeLogCache(scratch, { head, tree, files });
 
   // Everything parsed: now replace the state.
   S.gyms = gyms;
@@ -163,10 +173,12 @@ function applyFiles(files, { head, tree, withLog = true } = {}) {
   S.version = files[FILES.version] ? files[FILES.version].text.trim() : null;
   if (withLog) {
     S.oldFormat = isOldFormat(log);
+    S.needsSplit = scratch.layout === 'single';
     // Changes not sent yet stay visible on top of what was loaded.
     S.log = sortLog(S.oldFormat || !outbox ? log : applyOps(log, outbox.list()));
-    primeLogCache(logCache, { head, tree, sha: sha(FILES.log), text: files[FILES.log] ? files[FILES.log].text : null });
+    Object.assign(logCache, scratch);
   }
+  S.legacyLogToo = !!legacyToo;
   // Screens hold the gym, room and machine they show: point them at the new copies.
   if (S.gym) S.gym = S.gyms.find(g => g.id === S.gym.id) || S.gym;
   if (S.gym && S.room) S.room = (S.gym.rooms || []).find(r => r.id === S.room.id) || S.room;
@@ -183,7 +195,7 @@ export async function showFromDevice() {
   const s = validSnapshot(await readSnapshot(repoKey()));
   if (!s || r !== S.repo || S.loaded) return false;
   try {
-    applyFiles(s.files, { head: s.head, tree: s.tree });
+    applyFiles(s.files, { head: s.head, tree: s.tree, legacyToo: s.legacyToo });
     snap = s;
     S.loaded = true;
     S.fromDevice = true;
@@ -228,15 +240,17 @@ export async function loadAll(onStatus = () => {}, { force = false } = {}) {
       const got = Object.fromEntries(await Promise.all(need.map(async p => [p, await r.blobText(t.files[p])])));
       if (r !== S.repo) return false;
       let files = nextFiles(t.files, have, got);
-      let next = makeSnapshot(head, t.sha, files);
-      const logSent = saves !== gen && snap; // a save landed meanwhile: its log is newer than this one
+      const lay = logLayout(t.files);
+      const legacyToo = lay.layout === 'months' && lay.legacyToo;
+      let next = makeSnapshot(head, t.sha, files, legacyToo);
+      const logSent = saves !== gen && snap; // a save landed meanwhile: its months are newer than these
       if (logSent) {
-        files = { ...files };
-        if (snap.files[FILES.log]) files[FILES.log] = snap.files[FILES.log]; else delete files[FILES.log];
-        next = makeSnapshot(null, null, files);
+        files = { ...Object.fromEntries(Object.entries(files).filter(([p]) => !isLogPath(p))),
+          ...Object.fromEntries(Object.entries(snap.files).filter(([p]) => isLogPath(p))) };
+        next = makeSnapshot(null, null, files, legacyToo);
       }
-      changed = !snap || changedPaths(snap.files, files).length > 0;
-      applyFiles(files, { head, tree: t.sha, withLog: !logSent });
+      changed = !snap || changedPaths(snap.files, files).length > 0 || !!snap.legacyToo !== legacyToo;
+      applyFiles(files, { head, tree: t.sha, withLog: !logSent, legacyToo });
       keep(next);
     }
     S.loaded = true;
@@ -269,8 +283,12 @@ export function imageUrl(gym, file) {
  * sent in the background; they return without waiting for GitHub. The
  * background save status is S.sync (see onSync).
  */
+/** An expected refusal (shown to the user, not logged as an error). */
+const refused = msg => Object.assign(new Error(msg), { refused: true });
+
 function queue(op) {
-  if (S.oldFormat) throw new Error('This repository still has data in the old format. It must be migrated before the new app can save.');
+  if (S.oldFormat) throw refused('This repository still has data in the old format. It must be migrated before the new app can save.');
+  if (S.needsSplit) throw refused('Your log is still one file (workout-log.json). Saving is off until it is split into months: see "Upgrading to 0.3.0" in the setup guide.');
   repo();
   S.log = sortLog(applyOp(S.log, op));
   syncer.add(op).catch(e => console.error(e));

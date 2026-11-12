@@ -2,7 +2,11 @@
  * Load and save timings on a phone-like link, against the in-memory fake
  * GitHub seeded with a made-up repo the size of a busy six months.
  *
- *   node tests/e2e/measure.mjs [app-dir] [--entries 1700] [--layout auto|v2|months]
+ *   node tests/e2e/measure.mjs [app-dir] [--entries 1700] [--layout auto|v2|months] [--day0 2026-11-10]
+ *
+ * --day0: the newest date in the made-up log (it runs back from there). Saves
+ * go to today's month, so a --day0 at the end of this month makes that month
+ * full: the largest month a save uploads.
  *
  * app-dir: the app to serve (default: this checkout), so an older version can
  * be measured from a `git worktree`. The link is modelled, not emulated: one
@@ -27,6 +31,7 @@ const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PATH 
 const args = process.argv.slice(2);
 const opt = (name, d) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args.splice(i, 2)[1] : d; };
 const ENTRIES = +opt('entries', 1700);
+const DAY0 = opt('day0', '2026-11-10');
 let LAYOUT = opt('layout', 'auto');
 const APP = path.resolve(args[0] || new URL('../..', import.meta.url).pathname);
 if (LAYOUT === 'auto') LAYOUT = /^0\.2\./.test(fs.readFileSync(path.join(APP, 'VERSION'), 'utf8')) ? 'v2' : 'months';
@@ -51,7 +56,7 @@ for (let g = 1; g <= 7; g++) {
   seed[`equipment/my-gyms/gym-${g}/gym.json`] = JSON.stringify(gym, null, 2) + '\n';
 }
 const log = [];
-const day0 = Date.UTC(2026, 10, 10);
+const day0 = Date.parse(`${DAY0}T00:00:00Z`);
 for (let d = 0; log.length < ENTRIES; d++) {
   const date = new Date(day0 - d * 86400000).toISOString().slice(0, 10);
   const gym = pick(gyms);

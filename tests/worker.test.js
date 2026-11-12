@@ -1,15 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import worker, { logToCSV as wCSV, logToJSON as wJSON } from '../worker/worker.js';
+import worker, { logToCSV as wCSV, logToJSON as wJSON, splitLog as wSplit, monthToText as wMonth, joinMonths as wJoin } from '../worker/worker.js';
 import { logToCSV, logToJSON } from '../lib/log.js';
+import { splitLog, monthToText, joinMonths } from '../lib/months.js';
 import { createFakeGitHub } from './fake-github.js';
 
 const env = { SECRET_TOKEN: 's3cret\n', GITHUB_PAT: 'pat', GITHUB_USER: 'someone', GITHUB_REPO: 'traintracks' };
 const E = o => ({ id: 'x1', date: '2026-11-04', gym_id: 'eg', machine_id: 'r02', machine: 'Row', set: 1, variant: [], reps: 10, notes: '', ...o });
 
-function setup(files = {}) {
-  const log = [E()];
-  const gh = createFakeGitHub({ 'workout-log.json': logToJSON(log), 'workout-log.csv': logToCSV(log), 'profile.json': '{"first_name":"Sam"}\n', ...files });
+const monthFiles = log => Object.fromEntries(Object.entries(splitLog(log)).map(([p, e]) => [p, monthToText(e)]));
+const NOV = 'log/2026-11.json', OCT = 'log/2026-10.json';
+function setup(files = {}, log = [E(), E({ id: 'o1', date: '2026-10-03' })]) {
+  const gh = createFakeGitHub({ ...monthFiles(log), 'workout-log.csv': logToCSV(log), 'profile.json': '{"first_name":"Sam"}\n', ...files });
   globalThis.fetch = gh.fetch;
   const call = (path, { method = 'GET', body, auth = 'Bearer s3cret', query = '' } = {}) => worker.fetch(new Request(`https://w.example${path}${query}`, {
     method, headers: { ...(auth ? { Authorization: auth } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
@@ -22,6 +24,14 @@ test('the Worker writes the log files exactly as the app does', () => {
   const log = [E({ notes: 'a, "b"\nc', variant: ['wide', 'incline'], weight_lb: -85 }), E({ id: 'x2', reps: null })];
   assert.equal(wCSV(log), logToCSV(log));
   assert.equal(wJSON(log), logToJSON(log));
+});
+
+test('the Worker splits and writes the month files exactly as the app does', () => {
+  const log = [E({ id: 'a', date: '2026-11-04', notes: 'Bodyweight — "ok", ✓\nx' }), E({ id: 'b', date: '2026-11-05', set: 2 }), E({ id: 'c', date: '2026-10-01' }), E({ id: 'd', date: '' })];
+  const a = wSplit(log), b = splitLog(log);
+  assert.deepEqual(a, b);
+  for (const p of Object.keys(b)) assert.equal(wMonth(a[p]), monthToText(b[p]));
+  assert.deepEqual(wJoin(a), joinMonths(b));
 });
 
 test('the Worker exports duration_min and zone minutes exactly as the app does (0.2.0 rows too)', () => {
@@ -59,23 +69,63 @@ test('/log-json returns the log, the head to write against and whether the CSV a
   const { gh, call } = setup();
   const j = await (await call('/log-json')).json();
   assert.equal(j.head, gh.head);
-  assert.equal(j.entries, 1);
-  assert.equal(j.csv_rows, 1);
+  assert.equal(j.entries, 2);
+  assert.equal(j.layout, 'months');
+  assert.equal(j.months, 2);
+  assert.deepEqual(JSON.parse(j.log_json).map(e => e.id), ['x1', 'o1'], 'the whole log, newest first');
+  assert.equal(j.csv_rows, 2);
   assert.equal(j.in_sync, true);
 });
 
-test('/log-write: one commit with both files, CSV built from the JSON', async () => {
+test('/log-write: one commit with only the month that changed (the CSV is left to the Action)', async () => {
   const { gh, call } = setup();
   const { head, log_json } = await (await call('/log-json')).json();
   const log = JSON.parse(log_json);
   log.unshift(E({ id: 'x2', date: '2026-11-06', notes: 'easy, short' }));
   const before = gh.commitCount();
+  const octBefore = gh.read(OCT), csvBefore = gh.read('workout-log.csv');
   const r = await call('/log-write', { method: 'POST', body: { log_json: JSON.stringify(log), base_head: head, message: 'Add a session' } });
   assert.equal(r.status, 200, await r.clone().text());
+  assert.deepEqual((await r.json()).months_written, [NOV]);
   assert.equal(gh.commitCount(), before + 1);
   assert.equal(gh.lastMessage(), 'Add a session');
-  assert.equal(gh.read('workout-log.csv'), logToCSV(log));
-  assert.equal(gh.read('workout-log.json'), logToJSON(log));
+  assert.equal(gh.read(NOV), monthToText(log.filter(e => e.date.startsWith('2026-11'))));
+  assert.equal(gh.read(OCT), octBefore);
+  assert.equal(gh.read('workout-log.csv'), csvBefore);
+  assert.equal(gh.read('workout-log.json'), null);
+});
+
+test('/log-write: a session moved to another month writes both; an emptied month is removed', async () => {
+  const { gh, call } = setup();
+  const { head, log_json } = await (await call('/log-json')).json();
+  const log = JSON.parse(log_json).map(e => (e.id === 'o1' ? { ...e, date: '2026-11-01' } : e));
+  const r = await call('/log-write', { method: 'POST', body: { log_json: JSON.stringify(log), base_head: head } });
+  assert.deepEqual((await r.json()).months_written, [OCT, NOV].sort());
+  assert.equal(gh.read(OCT), null);
+  assert.deepEqual(JSON.parse(gh.read(NOV)).map(e => e.id), ['x1', 'o1']);
+});
+
+test('/log-write: nothing changed → no commit', async () => {
+  const { gh, call } = setup();
+  const { head, log_json } = await (await call('/log-json')).json();
+  const before = gh.commitCount();
+  const r = await call('/log-write', { method: 'POST', body: { log_json, base_head: head } });
+  assert.equal(r.status, 200);
+  assert.equal(gh.commitCount(), before);
+});
+
+test('/log-write: a repo not split into months yet is readable but refused (409)', async () => {
+  const log = [E()];
+  const gh = createFakeGitHub({ 'workout-log.json': logToJSON(log), 'workout-log.csv': logToCSV(log) });
+  globalThis.fetch = gh.fetch;
+  const call = (path, o = {}) => worker.fetch(new Request(`https://w.example${path}`, { method: o.method || 'GET', headers: { Authorization: 'Bearer s3cret', 'Content-Type': 'application/json' }, body: o.body && JSON.stringify(o.body) }), env);
+  const j = await (await call('/log-json')).json();
+  assert.equal(j.layout, 'single');
+  assert.equal(j.entries, 1);
+  const r = await call('/log-write', { method: 'POST', body: { log_json: j.log_json, base_head: j.head } });
+  assert.equal(r.status, 409);
+  assert.match((await r.json()).error, /split it into months/);
+  assert.equal(gh.read('log/2026-11.json'), null);
 });
 
 test('/log-write: refused (409) if the repo moved since the read; nothing written', async () => {
@@ -91,9 +141,10 @@ test('/log-write: a race during the write is also a 409', async () => {
   const { gh, call } = setup();
   const { head, log_json } = await (await call('/log-json')).json();
   gh.hooks.beforePatchRef = () => gh.write({ 'other.txt': 'x' });
-  const r = await call('/log-write', { method: 'POST', body: { log_json, base_head: head } });
+  const log = [E({ id: 'x9', date: '2026-11-08' }), ...JSON.parse(log_json)];
+  const r = await call('/log-write', { method: 'POST', body: { log_json: JSON.stringify(log), base_head: head } });
   assert.equal(r.status, 409);
-  assert.equal(JSON.parse(gh.read('workout-log.json')).length, 1);
+  assert.equal(JSON.parse(gh.read(NOV)).length, 1);
 });
 
 test('/log-write: refuses to shrink unless allow_shrink', async () => {

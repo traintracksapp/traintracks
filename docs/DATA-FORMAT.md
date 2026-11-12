@@ -1,7 +1,11 @@
 # TrainTracks data format
 
-**Status: approved 7 Nov 2026 (format version 2).** Version 1 is the format used
-by LogTrim and TrainTracks 0.1.0; the migration converts it (see "Migrating from version 1").
+**Status: format version 3 (TrainTracks 0.3.0, 12 Nov 2026).** Version 3 keeps
+version 2's fields and conventions (approved 7 Nov 2026) and changes only where
+the log is stored: one file per month under `log/` instead of one
+`workout-log.json` (see "The log" and "Migrating from version 2"). Version 1 is
+the format used by LogTrim and TrainTracks 0.1.0; the migration converts it (see
+"Migrating from version 1").
 
 All paths are relative to the user's repo root. JSON is pretty-printed (2 spaces),
 CSV is UTF-8 with LF line endings.
@@ -38,10 +42,46 @@ Also everywhere:
   and uses standard quoting (RFC 4180).
 - Readers **keep fields they don't know** when they rewrite a file.
 
-## The log: `workout-log.json` (authoritative) and `workout-log.csv` (export)
+## The log: `log/YYYY-MM.json` (authoritative) and `workout-log.csv` (export)
 
-One entry per **set**. The JSON is the record; the CSV is regenerated from it in
-the same commit on every save and is never edited by hand.
+One entry per **set**. The month files are the record; the CSV is rebuilt from
+them and is never edited by hand.
+
+### Files (format version 3)
+
+- **One JSON file per month**: `log/2026-11.json` holds every entry whose `date`
+  is in November 2026. A month with no entries has no file. An entry without a
+  usable date would go in `log/undated.json` (the app never writes one).
+- **Order within a file:** newest date first; the entries of one day in the
+  order they were saved, sets in order. The whole log is the months newest
+  first, which reads exactly as the single file used to (and is the CSV's order).
+- **Formatting: one entry per line.** The file is a JSON array written as `[`,
+  then each entry as compact JSON (`JSON.stringify(entry)`) on its own line,
+  lines joined by `,`, then `]` and a final newline:
+  ```
+  [
+  {"id":"k3f9a2","date":"2026-11-06","time":"11:15:34","gym_id":"generic",...,"set":1,"reps":20},
+  {"id":"k3f9a3","date":"2026-11-06","time":"11:15:34","gym_id":"generic",...,"set":2,"reps":18}
+  ]
+  ```
+  A changed set is a one-line diff, and a file is about a fifth smaller than
+  pretty-printed JSON. Readers parse it as ordinary JSON; writers must produce
+  exactly this text (the app, the Garmin pipeline and the Worker share the rule:
+  `lib/months.js`, `pipelines/garmin/logfmt.py`, `worker/worker.js`), so a file
+  only changes when its entries do.
+- **A save writes only the months it changes**, as one commit: a new or edited
+  session touches its month; changing a session's date to another month touches
+  both; deleting a month's last session deletes its file.
+- **`workout-log.csv`** is rebuilt from all the months by the `build-csv`
+  GitHub Action (`.github/workflows/build-csv.yml`) after every push that
+  changes `log/` and after every Garmin run. It can be **about a minute behind**
+  the month files. Same columns and order as before.
+- **`workout-log.json` is retired.** It is deleted when the log is split
+  (`scripts/split-log.mjs`). The app reads it only in a repo that has no month
+  files yet (and then refuses to save); if it reappears next to `log/`, it is
+  ignored and the app shows a notice.
+
+### Fields
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -69,7 +109,8 @@ the same commit on every save and is never edited by hand.
 
 Rules:
 - **Session** = same `gym_id` + `machine_id` + `date` + `variant`. Saving a session
-  replaces all its rows; editing a session's date moves it.
+  replaces all its rows; editing a session's date moves it (to another month's
+  file if the month changes).
 - Order: newest date first, sets in order within a day. The CSV uses the same order.
 
 Which fields each kind of machine uses:
@@ -130,9 +171,19 @@ their names and units now so nothing has to be renamed later.
 
 The migration converts all of them.
 
+## Migrating from version 2 (TrainTracks 0.2.x → 0.3.0)
+
+Entries are not changed, only moved: `scripts/split-log.mjs <repo> <output>`
+reads `workout-log.json`, writes `log/YYYY-MM.json` and a rebuilt
+`workout-log.csv` (plus the two workflow files) to the output folder, and checks
+that the months hold exactly the old file's entries and that the CSV is
+unchanged. The source is never written. The steps, including the order of the
+app update and the workflow files, are in [SETUP.md](SETUP.md#upgrading-to-030).
+
 ## Migrating from version 1
 
-Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
+`scripts/migrate.mjs` writes the converted log straight into the monthly files
+of version 3. Version 1 rows (LogTrim, TrainTracks 0.1.0) are converted one-for-one: same
 `id` (or a new one if missing), same date, machine and set. Field mapping:
 
 | Version 1 | Version 2 |

@@ -21,6 +21,15 @@ test('planUpdate: added, changed, unchanged; personal Garmin settings added if m
   assert.ok(SYNC_EXCLUDE.every(f => inScope(f, SYNC_PREFIXES)));
 });
 
+test('0.3.0: the log months, the CSV and the workflows are never copied; what 0.3.0 needs from an update is under 0.2.x prefixes', () => {
+  for (const p of ['log/2026-11.json', 'log/undated.json', 'workout-log.csv', '.github/workflows/build-csv.yml', 'scripts/split-log.mjs']) assert.ok(!inScope(p), p);
+  // The update to 0.3.0 is planned by the 0.2.x app, with 0.2.x's prefixes: the new code must be under them.
+  const PREFIXES_0_2 = ['index.html', 'app/', 'lib/', 'docs/', 'equipment/generic/', 'pipelines/garmin/', 'CHANGELOG.md', 'VERSION', 'CLAUDE.md', '.nojekyll'];
+  for (const p of ['lib/months.js', 'lib/snapshot.js', 'app/devicestore.js', 'pipelines/garmin/logfmt.py', 'pipelines/garmin/post_zone_records.py', 'docs/SETUP.md']) assert.ok(inScope(p, PREFIXES_0_2), p);
+  const tpl = { 'lib/months.js': 'n', 'log/2026-11.json': 'template-has-none', '.github/workflows/build-csv.yml': 'w' };
+  assert.deepEqual(planUpdate(tpl, {}, PREFIXES_0_2).all, ['lib/months.js']);
+});
+
 test('compareVersions', () => {
   assert.equal(compareVersions('0.2.0', '0.1.0'), 1);
   assert.equal(compareVersions('0.1.0', '0.1'), 0);

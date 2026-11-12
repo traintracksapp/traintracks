@@ -31,6 +31,8 @@ export function renderHome() {
   const extra = sections.map(fn => fn()).filter(Boolean);
   setHTML('homebody', html`
     ${S.oldFormat ? html`<div class="banner bad">This repository's data is still in the old format. Browsing works, but saving is turned off until it is migrated (see the setup guide).</div>` : ''}
+    ${!S.oldFormat && S.needsSplit ? html`<div class="banner bad">Your log is still one file (workout-log.json). This version keeps one file per month. Browsing works, but saving is turned off until the log is split: see <a href="${docUrl('SETUP.md')}#upgrading-to-030" target="_blank" rel="noopener">Upgrading to 0.3.0</a>.</div>` : ''}
+    ${S.legacyLogToo ? html`<div class="banner bad">workout-log.json is in your repository next to the monthly log files in log/. The app ignores it: the months are the log. If something old wrote it (an old Worker, an old Garmin workflow, a device still running an older version), see <a href="${docUrl('SETUP.md')}#upgrading-to-030" target="_blank" rel="noopener">Upgrading to 0.3.0</a>.</div>` : ''}
     ${extra}
     <div class="sh ${extra.length ? '' : 'first'}">My gyms</div>
     ${mine.length ? html`<div class="card">${mine.map(gymRow)}</div>` : html`<div class="empty" style="padding:22px"><p>No gyms yet.<br>Add one in Settings → Manage equipment, or import from the catalog.</p></div>`}

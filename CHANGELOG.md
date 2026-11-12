@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 (12 Nov 2026)
+
+**This update changes how the log is stored, and needs two more steps after you press Update.** Until they are done, the app shows your log but saving is turned off. Read "Upgrading to 0.3.0" in the setup guide (`docs/SETUP.md`) before you start; it takes about ten minutes on a computer with git and Node.js. Let any "Saving…" note finish on every device first.
+
+- **Saving no longer slows down as your history grows.** The log is now one file per month (`log/2026-11.json`, `log/2026-10.json`…) instead of one `workout-log.json`, and a save sends only the month it changes (two when you move a session to a date in another month). Every entry is kept exactly as it was (format version 3, `docs/DATA-FORMAT.md`).
+- Month files have one entry per line, so GitHub's history shows a changed set as a one-line change.
+- **`workout-log.csv` stays, with the same columns, but is now rebuilt by a GitHub Action** (`.github/workflows/build-csv.yml`) about a minute after each change, instead of by the app. The coach and spreadsheets read it as before; it can be up to a minute behind.
+- `workout-log.json` is retired: the split deletes it. If it ever comes back next to `log/` (an old Worker, an old Garmin workflow, a device still on an older version), the app ignores it and says so.
+- The Garmin pipeline writes only the months that get a new row. Until your log is split it keeps writing `workout-log.json` as before; once it is split, the old `garmin.yml` stops with a message (nothing is lost) until you replace it.
+- The Worker (`worker/worker.js` 0.3.0) reads and writes the months; `/log-json` and `/log-write` still take the whole log. Redeploy it if you use it.
+- `scripts/migrate.mjs` (from LogTrim or 0.1.0) writes the monthly files directly.
+
+The upgrade, in order (details in `docs/SETUP.md`):
+
+1. **Update the app** from Settings → Check for updates. The updater copies the app and the Garmin pipeline; it can't touch your data or workflows.
+2. **Split the log**: from a checkout of the template, `node scripts/split-log.mjs <your-repo> <output-folder>`. It never changes your repo, writes `log/`, a rebuilt `workout-log.csv` and the two workflow files to the output folder, and prints the entries per month with checks that nothing was lost and the CSV is unchanged.
+3. **Commit, in one commit:** the `log/` folder and `workout-log.csv`, the deletion of `workout-log.json`, and `.github/workflows/build-csv.yml` plus the new `.github/workflows/garmin.yml`. (Workflow files need a login allowed to change workflows; the app's token can't, which is why the updater can't.) Then reload the app on each device, and redeploy the Worker if you use it.
+
+Measured with `node tests/e2e/measure.mjs` (same made-up 1,700-entry repo and phone-like link as 0.2.4):
+
+| | 0.2.4 | 0.3.0 |
+|---|---|---|
+| Save, until GitHub has it | 7.0 s, 1.3 MB sent | 1.3 s, 44 KB sent (1.7 s, 127 KB at the end of a busy month) |
+| First open on a device | 1.69 s | 1.67 s (22 calls, one per month) |
+| Opening again, nothing changed | home in 0.84 s, 1 call | home in 0.83 s, 1 call |
+
 ## 0.2.4 (12 Nov 2026)
 
 - **Fixed: "changes not saved to GitHub yet (GitHub 422)" after saving twice within a minute.** GitHub's answers may be kept by the browser for 60 seconds, so the second save was built on an out-of-date copy of the branch and refused, and the quick retries got the same old answer. Every request to GitHub now asks the browser to check with GitHub first.

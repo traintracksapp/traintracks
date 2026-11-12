@@ -102,8 +102,80 @@ are never touched. Reload the page a minute or two later, once GitHub Pages has
 rebuilt.
 
 The updater cannot change files under `.github/workflows/` (GitHub doesn't
-allow that with this kind of token). If an update's notes say the Garmin
-workflow changed, copy `.github/workflows/garmin.yml` from the template by hand.
+allow that with this kind of token). If an update's notes say a workflow
+changed, copy it from the template by hand.
+
+## Upgrading to 0.3.0
+
+0.3.0 keeps the log as **one file per month** (`log/2026-11.json`,
+`log/2026-10.json`…) instead of one `workout-log.json`, so a save sends one
+month instead of your whole history. Every entry stays exactly as it was.
+`workout-log.csv` stays where it is with the same columns; a new GitHub Action
+rebuilds it from the months about a minute after each change.
+
+The update needs three steps, in this order. Do them in one sitting if you can.
+
+**Before you start:** open TrainTracks on each of your devices and wait until
+any "Saving…" note has gone. Then close it on all but one (a device left open
+on the old version could still write the old file).
+
+**1. Update the app.** Settings → **Check for updates** → **Update**, and
+reload after a minute or two. The app now says *"Your log is still one file"*:
+everything is shown, but saving is off until step 2. Garmin keeps posting to
+the old file in the meantime.
+
+**2. Split the log** (on a computer with git and Node.js 22 or later). The
+script only reads your repository and writes the new files into another folder,
+with a report:
+
+```
+git clone https://github.com/traintracksapp/traintracks tt-template
+git clone https://github.com/YOUR-USERNAME/traintracks my-traintracks
+node tt-template/scripts/split-log.mjs my-traintracks split-out
+```
+
+Check the report: each month with its number of entries, *"the months hold
+exactly the entries of workout-log.json: yes"* and, for the CSV, *"identical to
+the old one: yes"*. If a check says no, stop and ask for help: nothing has
+changed yet.
+
+**3. Commit the months and the workflow files together** (the script put
+`build-csv.yml` and the new `garmin.yml` in the output folder; if you changed
+your `garmin.yml`, its schedule for example, compare the two first):
+
+```
+cd my-traintracks
+cp -r ../split-out/log ../split-out/workout-log.csv .
+mkdir -p .github/workflows
+cp ../split-out/.github/workflows/build-csv.yml ../split-out/.github/workflows/garmin.yml .github/workflows/
+git rm workout-log.json
+git add log workout-log.csv .github/workflows/build-csv.yml .github/workflows/garmin.yml
+git commit -m "Split the workout log into monthly files (TrainTracks 0.3.0)"
+git push
+```
+
+If the push is refused because something (usually the Garmin workflow) wrote in
+the meantime, don't merge: `git reset --hard origin/main` and repeat from
+`split-log.mjs` (step 2), so the split includes the new rows. Pushing workflow
+files needs a login that may change workflows: GitHub Desktop, `gh auth login`,
+or a token with **Workflows: Read and write**. (The app's token can't, which is
+why the updater can't do this step.)
+
+The workflow files can also be added later, in their own commit, through
+GitHub's web page (**Add file**). Until then the Garmin workflow stops with a
+message and posts nothing (it catches up on its first run with the new file,
+for activities from the last two weeks), and the CSV isn't rebuilt.
+
+**Then:** reload the app on each device; the notice has gone and saving works.
+Save something and, a minute later, `workout-log.csv` has it too (**Actions**
+tab → **build-csv**). If you use the [Worker](WORKER.md), deploy the new
+`worker/worker.js`: an older one would write the retired `workout-log.json`.
+
+If the app ever says *"workout-log.json is in your repository next to the
+monthly log files"*, something old wrote that file (a Worker not redeployed,
+the old `garmin.yml`, a device still on the old version). The app ignores it.
+Any rows in it that aren't in `log/` were not saved into the log: enter them
+again (or ask Claude Code to move them across), then delete the file.
 
 ## Trust model: please read
 
@@ -142,5 +214,11 @@ nothing changes until you've checked it.
   until it has gone.
 - **Pages shows a 404:** the branch/folder setting in step 3 is wrong, or the
   first build hasn't finished (it can take a couple of minutes).
-- **A session saved on one device isn't on another:** Settings → **Reload data**.
-  The app also reloads by itself after being in the background for ten minutes.
+- **A session saved on one device isn't on another:** the app checks GitHub
+  when it opens and when you come back to it after a minute away; Settings →
+  **Reload data from GitHub** downloads everything again. Settings also shows
+  the last save problem on this device, with GitHub's own message.
+- **`workout-log.csv` is behind the app:** it is rebuilt by the **build-csv**
+  Action about a minute after each change; look in the **Actions** tab if it
+  stays behind. (Repositories made before 0.3.0 need the workflow file: see
+  "Upgrading to 0.3.0".)

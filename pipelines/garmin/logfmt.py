@@ -1,19 +1,24 @@
 """
-The workout log's files, written exactly as the app writes them (lib/log.js),
-so a Garmin Action commit and an app commit never differ in format.
+The workout log's files, written exactly as the app writes them (lib/log.js,
+lib/months.js), so a Garmin Action commit and an app commit never differ in format.
 
-  workout-log.json  JSON.stringify(log, null, 2) + "\\n"
+  log/YYYY-MM.json  format version 3: one file per month of entry `date`;
+                    newest date first, a day's entries in saved order; "[", then
+                    one JSON.stringify(entry) per line joined by ",", then "]" + "\\n"
+  workout-log.json  format version 2 (a repo not split yet): JSON.stringify(log, null, 2) + "\\n"
   workout-log.csv   header LOG_COLUMNS, standard quoting, LF, tags joined "; ";
                     duration_min computed from duration_sec (export only), zone
                     minutes from zone{i}_sec on rows older than 0.2.1 (csvRow in lib/log.js)
 
-Format version 2 (docs/DATA-FORMAT.md).
+docs/DATA-FORMAT.md.
 """
 from __future__ import annotations
 
 import json
 import math
+import os
 import random
+import re
 import time
 
 LOG_COLUMNS = [
@@ -130,3 +135,91 @@ def _b36(n: int) -> str:
         n, r = divmod(n, 36)
         s = chars[r] + s
     return s or "0"
+
+
+# ---- format version 3: one file per month (lib/months.js) ----
+
+LOG_DIR = "log"
+LEGACY_LOG = "workout-log.json"
+UNDATED = "undated.json"
+_MONTH_FILE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])\.json$")
+_MONTH_OF = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])-\d{2}")
+
+
+def is_month_file(name: str) -> bool:
+    """A month file's name inside log/ (or the undated file)."""
+    return bool(_MONTH_FILE.match(name)) or name == UNDATED
+
+
+def month_name_of(e: dict) -> str:
+    """The file (inside log/) an entry belongs in."""
+    d = e.get("date") if isinstance(e, dict) else None
+    m = _MONTH_OF.match(d) if isinstance(d, str) else None
+    return f"{m.group(1)}-{m.group(2)}.json" if m else UNDATED
+
+
+def _month_key(name: str):
+    return (name != UNDATED, name)
+
+
+def split_log(entries: list[dict]) -> dict[str, list[dict]]:
+    """{ month file name: entries }, each newest date first, stable within a day (sets keep their order)."""
+    out: dict[str, list[dict]] = {}
+    for e in entries:
+        out.setdefault(month_name_of(e), []).append(e)
+    # reverse=True keeps equal keys in their original order (Python's sort is stable).
+    return {k: sorted(v, key=lambda e: (e.get("date") or "") if isinstance(e, dict) else "", reverse=True) for k, v in out.items()}
+
+
+def join_months(months: dict[str, list[dict]]) -> list[dict]:
+    """The whole log, newest month first, the undated file last."""
+    out: list[dict] = []
+    for name in sorted(months, key=_month_key, reverse=True):
+        out.extend(months[name])
+    return out
+
+
+def month_to_text(entries: list[dict]) -> str:
+    """One entry per line, exactly as monthToText in lib/months.js."""
+    if not entries:
+        return "[]\n"
+    return "[\n" + ",\n".join(json.dumps(_clean(e), ensure_ascii=False, separators=(",", ":")) for e in entries) + "\n]\n"
+
+
+def has_months(log_dir: str = LOG_DIR) -> bool:
+    return os.path.isdir(log_dir) and any(is_month_file(n) for n in os.listdir(log_dir))
+
+
+def read_months(log_dir: str = LOG_DIR) -> dict[str, list[dict]]:
+    """Every month file in log/: { name: entries }."""
+    out = {}
+    if not os.path.isdir(log_dir):
+        return out
+    for n in os.listdir(log_dir):
+        if not is_month_file(n):
+            continue
+        with open(os.path.join(log_dir, n), encoding="utf-8") as f:
+            v = json.load(f)
+        if not isinstance(v, list):
+            raise ValueError(f"{log_dir}/{n} is not a list")
+        out[n] = v
+    return out
+
+
+def write_months(log_dir: str, before: dict[str, list[dict]], entries: list[dict]) -> list[str]:
+    """Write the months that changed (compared by their text) and remove emptied ones. Returns the names touched."""
+    after = split_log(entries)
+    touched = []
+    os.makedirs(log_dir, exist_ok=True)
+    for name, es in after.items():
+        text = month_to_text(es)
+        if name in before and month_to_text(before[name]) == text:
+            continue
+        with open(os.path.join(log_dir, name), "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        touched.append(name)
+    for name in before:
+        if name not in after:
+            os.remove(os.path.join(log_dir, name))
+            touched.append(name)
+    return sorted(touched)

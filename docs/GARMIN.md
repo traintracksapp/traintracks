@@ -17,9 +17,15 @@ rather not publish it.
 | `daily-wellness.csv` | one row per complete day: steps, sleep, HRV, resting HR… | wellness goals |
 | `body-composition.csv` | weigh-ins from a Garmin Index scale (or manual entries in Garmin Connect) | no |
 | `blood-pressure.csv` | readings from a Garmin Index BPM | no |
-| `workout-log.json/.csv` | one row per new outdoor walk, run, ride or hike, linked by `garmin_id` | yes |
+| `log/YYYY-MM.json` | one row per new Garmin activity, linked by `garmin_id`, in the month file of its date (only the months that get a row are written; `workout-log.csv` is then rebuilt by the build-csv workflow) | yes |
 
 Column details: [DATA-FORMAT.md](DATA-FORMAT.md). Durations are in seconds.
+
+Repositories made before 0.3.0 need the new `.github/workflows/garmin.yml`
+once their log is split into months (see "Upgrading to 0.3.0" in
+[SETUP.md](SETUP.md#upgrading-to-030)): with the old workflow the log step stops
+with a message instead of posting rows it couldn't save. Until the split, it
+keeps writing `workout-log.json` and `.csv` as before.
 
 ## Turn it on
 

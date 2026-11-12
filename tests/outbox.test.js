@@ -2,9 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createFakeGitHub } from './fake-github.js';
 import { GitHubRepo } from '../lib/github.js';
-import { commitLog, newLogCache, LOG_JSON, LOG_CSV } from '../lib/logstore.js';
-import { logToJSON, logToCSV, sessionEntries } from '../lib/log.js';
-import { parseCSV } from '../lib/csv.js';
+import { commitLog, newLogCache } from '../lib/logstore.js';
+import { sessionEntries } from '../lib/log.js';
+import { monthToText } from '../lib/months.js';
+
+const NOV = 'log/2026-11.json'; // every entry in these tests is in November 2026
 import { mergeOp, removeOp, moveOp, applyOp, applyOps, batchMessage, createOutbox, createSyncer, retryDelay } from '../lib/outbox.js';
 
 const entry = o => ({ id: 'x1', gym_id: 'eg', machine_id: 'r02', date: '2026-11-04', set: 1, variant: [], reps: 10, ...o });
@@ -25,7 +27,7 @@ function manualTimers() {
 }
 
 function setup(log = [entry()]) {
-  const gh = createFakeGitHub({ [LOG_JSON]: logToJSON(log), [LOG_CSV]: logToCSV(log) });
+  const gh = createFakeGitHub({ [NOV]: monthToText(log) });
   const repo = new GitHubRepo({ owner: 'someone', repo: 'traintracks', token: 't', fetch: gh.fetch });
   const cache = newLogCache();
   const storage = memStorage();
@@ -41,7 +43,7 @@ function setup(log = [entry()]) {
   });
   return { gh, repo, outbox, storage, syncer, timers, sent, statuses };
 }
-const readLog = gh => JSON.parse(gh.read(LOG_JSON));
+const readLog = gh => JSON.parse(gh.read(NOV));
 
 // ---- operations ----
 
@@ -115,7 +117,6 @@ test('sender: one change → one commit with JSON and CSV that agree; the queue 
   assert.equal(gh.commitCount(), before + 1);
   assert.equal(gh.lastMessage(), 'Log r02 2026-11-05');
   assert.equal(readLog(gh).length, 2);
-  assert.deepEqual(parseCSV(gh.read(LOG_CSV)).map(r => r.id), readLog(gh).map(e => e.id));
   assert.deepEqual(outbox.list(), []);
   assert.equal(sent.length, 1);
   assert.equal(syncer.status().pending, 0);
@@ -140,7 +141,7 @@ test('sender: another writer\'s row survives (the change is replayed on the curr
   const op = mergeOp(readLog(gh), S1, [{ reps: 20 }], S1, 'Log');
   const log = readLog(gh);
   log.unshift(entry({ id: 'from-garmin', machine_id: 'walk', date: '2026-11-05' }));
-  gh.write({ [LOG_JSON]: logToJSON(log), [LOG_CSV]: logToCSV(log) }, 'garmin post');
+  gh.write({ [NOV]: monthToText(log) }, 'garmin post');
   await syncer.add(op);
   const ids = readLog(gh).map(e => e.id);
   assert.ok(ids.includes('from-garmin') && ids.includes('x1'));

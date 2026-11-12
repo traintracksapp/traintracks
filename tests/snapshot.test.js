@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import { isAppFile, toDownload, nextFiles, changedPaths, makeSnapshot, validSnapshot, withFile, withLogSave } from '../lib/snapshot.js';
 
 const tree = {
-  'workout-log.json': 'L1', 'workout-log.csv': 'C1', 'profile.json': 'P1', 'VERSION': 'V1',
+  'log/2026-11.json': 'L1', 'log/2026-10.json': 'K1', 'workout-log.csv': 'C1', 'profile.json': 'P1', 'VERSION': 'V1',
   'equipment/generic/gym.json': 'G1', 'equipment/generic/images/run.jpg': 'I1',
   'equipment/my-gyms/a/gym.json': 'A1', 'equipment/my-gyms/a/images/x.jpg': 'I2', 'app/main.js': 'M1'
 };
 
 test('isAppFile: the files the app reads on load, and nothing else', () => {
-  assert.ok(isAppFile('workout-log.json'));
+  assert.ok(isAppFile('log/2026-11.json'));
+  assert.ok(isAppFile('workout-log.json'), 'the old single file, for a repo not split yet');
+  assert.ok(!isAppFile('log/notes.txt'));
   assert.ok(isAppFile('equipment/my-gyms/a/gym.json'));
   assert.ok(!isAppFile('workout-log.csv'), 'the CSV is an export; the app never reads it');
   assert.ok(!isAppFile('equipment/my-gyms/a/images/x.jpg'));
@@ -18,18 +20,25 @@ test('isAppFile: the files the app reads on load, and nothing else', () => {
 });
 
 test('first open: every app file is downloaded', () => {
-  assert.deepEqual(toDownload(tree, {}), ['VERSION', 'equipment/generic/gym.json', 'equipment/my-gyms/a/gym.json', 'profile.json', 'workout-log.json']);
+  assert.deepEqual(toDownload(tree, {}), ['VERSION', 'equipment/generic/gym.json', 'equipment/my-gyms/a/gym.json', 'log/2026-10.json', 'log/2026-11.json', 'profile.json']);
+});
+
+test('the old single-file log is read only while there are no month files', () => {
+  assert.ok(toDownload({ 'workout-log.json': 'W1', 'profile.json': 'P1' }).includes('workout-log.json'));
+  assert.ok(!toDownload({ ...tree, 'workout-log.json': 'W1' }).includes('workout-log.json'));
+  assert.ok(!('workout-log.json' in nextFiles({ 'workout-log.json': 'W1', 'log/2026-11.json': 'L1' }, {}, { 'log/2026-11.json': '[]' })));
 });
 
 test('only files whose blob sha changed are downloaded', () => {
-  const have = { 'workout-log.json': { sha: 'L0', text: '[]' }, 'profile.json': { sha: 'P1', text: '{}' }, 'VERSION': { sha: 'V1', text: '0.2.4' },
+  const have = { 'log/2026-11.json': { sha: 'L0', text: '[]' }, 'log/2026-10.json': { sha: 'K1', text: '[]' }, 'profile.json': { sha: 'P1', text: '{}' }, 'VERSION': { sha: 'V1', text: '0.2.4' },
     'equipment/generic/gym.json': { sha: 'G1', text: '{}' }, 'equipment/my-gyms/a/gym.json': { sha: 'A1', text: '{}' } };
-  assert.deepEqual(toDownload(tree, have), ['workout-log.json']);
-  const files = nextFiles(tree, have, { 'workout-log.json': '[1]' });
-  assert.deepEqual(files['workout-log.json'], { sha: 'L1', text: '[1]' });
+  assert.deepEqual(toDownload(tree, have), ['log/2026-11.json'], 'only the month that changed');
+  const files = nextFiles(tree, have, { 'log/2026-11.json': '[1]' });
+  assert.deepEqual(files['log/2026-11.json'], { sha: 'L1', text: '[1]' });
+  assert.equal(files['log/2026-10.json'], have['log/2026-10.json']);
   assert.equal(files['profile.json'], have['profile.json']);
   assert.ok(!('workout-log.csv' in files));
-  assert.deepEqual(changedPaths(have, files), ['workout-log.json']);
+  assert.deepEqual(changedPaths(have, files), ['log/2026-11.json']);
 });
 
 test('a file removed from the repo is dropped (a dismissed plan, a deleted gym)', () => {
@@ -62,12 +71,14 @@ test('withFile: the app wrote a file itself; the head is no longer known', () =>
 });
 
 test('withLogSave: built on the snapshot head → the new commit is the head; else the head is cleared', () => {
-  const s = makeSnapshot('c1', 't1', { 'workout-log.json': { sha: 'L1', text: '[]' } });
-  const res = { parent: 'c1', commit: 'c2', tree: 't2', sha: 'L2', text: '[1]' };
-  const a = withLogSave(s, 'workout-log.json', res);
+  const s = makeSnapshot('c1', 't1', { 'log/2026-11.json': { sha: 'L1', text: '[]' }, 'log/2026-09.json': { sha: 'S1', text: '[]' } });
+  const res = { parent: 'c1', commit: 'c2', tree: 't2', files: { 'log/2026-11.json': { sha: 'L2', text: '[1]' }, 'log/2026-12.json': { sha: 'D1', text: '[2]' }, 'log/2026-09.json': null } };
+  const a = withLogSave(s, res);
   assert.equal(a.head, 'c2');
   assert.equal(a.tree, 't2');
-  assert.deepEqual(a.files['workout-log.json'], { sha: 'L2', text: '[1]' });
-  const b = withLogSave(s, 'workout-log.json', { ...res, parent: 'c9' }); // someone else wrote in between
+  assert.deepEqual(a.files['log/2026-11.json'], { sha: 'L2', text: '[1]' });
+  assert.deepEqual(a.files['log/2026-12.json'], { sha: 'D1', text: '[2]' });
+  assert.ok(!('log/2026-09.json' in a.files), 'a month emptied by the save is dropped');
+  const b = withLogSave(s, { ...res, parent: 'c9' }); // someone else wrote in between
   assert.equal(b.head, null);
 });

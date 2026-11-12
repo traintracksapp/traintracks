@@ -26,7 +26,59 @@ saw only the code rediscovered a deliberate decision as a bug.
 - **The CSV is an export read by header name**, with standard quoting. Google
   Sheets reads it with `IMPORTDATA`.
 - **A log save is one commit.** Two PUTs made two commits per save and could
-  leave the JSON and CSV out of step.
+  leave the JSON and CSV out of step. Since 0.3.0 that commit holds only the
+  month files the save changed (two for a move across months); the CSV is not
+  in it (see below).
+- **The log is one file per month** (0.3.0, format version 3:
+  `log/YYYY-MM.json`). Owner's decision, 12 Nov 2026, **replacing** the 9 Nov
+  note below that a split would be "per year or per quarter, never per month".
+  Measured on a copy of the owner's data: a save uploaded the whole log (1.3 MB
+  of JSON + CSV, about 7 of its 8.8 s on a phone link) and grew 150–270 KB a
+  month. A month file is the smallest unit that still keeps the file count
+  modest (12 a year) and caps a save at one month's entries; on the made-up
+  benchmark a save went from 7.0 s to 1.3 s (`tests/e2e/measure.mjs`).
+- **One entry per line in the month files**, compact JSON, newest date first.
+  Readable diffs (a set is a line), smaller files, still plain JSON for any
+  reader. All three writers (app, Garmin pipeline, Worker) produce the same
+  text, and a month is rewritten only if its entries changed (compared by that
+  canonical text, so formatting alone never causes a write). Tests check the
+  JavaScript, Python and Worker copies agree byte for byte.
+- **The app does not write `workout-log.csv`** (0.3.0). Rebuilding it needs every
+  month, which is exactly the upload the split removes. A GitHub Action
+  (`build-csv.yml`) rebuilds it with the app's own CSV code (`lib/months.js` →
+  `lib/log.js`, run by Node, no build step) and commits it only if it changed.
+  Approved trade-off: the CSV (read by the coach and spreadsheets) can lag the
+  log by about a minute. The Action runs on pushes that change `log/` (the app
+  and the Worker push with the user's token, which starts workflows) and after
+  the Garmin workflow (pushes made with `GITHUB_TOKEN` start no workflows, so a
+  push trigger alone would miss Garmin's rows). It cannot loop: it commits only
+  `workout-log.csv` (not a trigger path), says `[skip ci]`, and pushes with
+  `GITHUB_TOKEN`. It rebuilds from the newest `main` on each try, so a lost push
+  race just tries again.
+- **`workout-log.json` is retired, not kept as a copy** (0.3.0). Keeping it in
+  step would mean uploading the whole log again. The split deletes it in the
+  same commit that adds `log/`. A repo with only `workout-log.json` is shown
+  read-only with a notice until it is split (writing months next to it would
+  leave two logs); if the file reappears next to `log/` (an old Worker, an old
+  Garmin workflow, a device still on 0.2.x), the months win and the app says so.
+- **Upgrading to 0.3.0 has an ordering problem, solved by refusing safely**:
+  the updater copies app + `pipelines/garmin/` in one commit while the data is
+  still one file, and it cannot copy `.github/workflows/` at all (the app's
+  token has no Workflows permission, and updates are planned by the *installed*
+  app's `SYNC_PREFIXES`). So during the upgrade a repo can be in any of these
+  states, and each is safe:
+  1. app 0.3.0, log not split: the app shows the log and refuses to save; the
+     0.3.0 Garmin pipeline, run by the old workflow (`--log-json`), keeps
+     posting to `workout-log.json` + `.csv` as before.
+  2. split, but the old `garmin.yml`: `post_zone_records.py` refuses with a
+     message (it could write months, but the old workflow commits only
+     `workout-log.*`, so the rows would never be saved); nothing is lost, the
+     activities post on the first run after the workflow is replaced (within
+     `since_days`).
+  3. new `garmin.yml` but not split yet: the pipeline writes the single file.
+  `scripts/split-log.mjs` writes the two workflow files next to the months so
+  steps 2 and 3 of the upgrade can be one commit. Steps: `docs/SETUP.md`
+  ("Upgrading to 0.3.0") and `CHANGELOG.md`.
 - **A save reuses the log it last loaded or saved** (0.2.2). The app caches the
   log as stored in the file (file order, not the sorted view) with its commit and
   tree sha. A save asks for the branch head first; only if it moved is the head's
@@ -35,9 +87,10 @@ saw only the code rediscovered a deliberate decision as a bug.
   (no blob uploads, no base64) with the cached tree as `base_tree`, so a save is
   4 calls: GET ref, POST trees, POST commits, PATCH ref. A refused
   (non-fast-forward) ref update still means reload and retry. Upload size still
-  grows with the log; only splitting the file would fix that. If the log is
-  ever split, it is per year or per quarter, never per month (owner's decision,
-  9 Nov 2026).
+  grows with the log; only splitting the file would fix that. (A 9 Nov 2026
+  note said a split would be per year or per quarter, never per month; the
+  owner replaced that on 12 Nov 2026 with one file per month, see "The log is
+  one file per month" above.)
 - **Log changes are saved in the background** (0.2.3). A save shows at once, is
   stored on the device as an operation (replace a session, delete one, move one;
   not a copy of the log) in localStorage under `tt-outbox:<user>/<repo>`, and a
@@ -113,6 +166,15 @@ saw only the code rediscovered a deliberate decision as a bug.
 - An Action writing to a shared repo must `git pull --rebase --autostash` right
   before `git push`.
 - Gate workflows with a repository variable, not a secret's presence.
+- A push made with a workflow's own `GITHUB_TOKEN` starts no other workflow
+  (`push` triggers don't fire). Chain on it with `workflow_run` instead (how
+  `build-csv.yml` follows `garmin.yml`).
+- Creating or changing a file under `.github/workflows/` needs the Workflows
+  permission (fine-grained token) or `workflow` scope (OAuth / classic token);
+  a Contents-only token, like the app's, is refused. So the updater can never
+  ship workflow changes; they are copied by hand.
+- `git/trees` with `base_tree` deletes a path given `"sha": null`, which is how
+  one commit removes an emptied month file.
 - The exception is `ci.yml`: it runs only where `github.repository_owner == 'traintracksapp'`, so user repos made from the template don't run the test suite on every saved workout. Nothing fails or emails when it is skipped.
 - `localStorage` is per origin: a new domain or repo name means signing in again
   on every device.

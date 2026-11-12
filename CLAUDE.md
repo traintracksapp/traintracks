@@ -32,10 +32,16 @@ This repo (`traintracksapp/traintracks`) is the **template** users copy with
 - Network code lives in one data-layer module. Everything else is pure and tested.
 - Never read a file you will write back through raw.githubusercontent.com
   (5-minute cache). Read through the API, keep the sha, send it on write.
-- A log save is **one commit** (JSON + CSV together) via the Git Data API, with
-  reload-and-retry when the branch moved. Screens never write the log directly:
-  they queue an operation (`saveSession` / `deleteSession` / `moveSessionTo` in
-  `app/data.js`) that is shown at once and sent in the background (`lib/outbox.js`).
+- The log is **one file per month**, `log/YYYY-MM.json`, one entry per line (format
+  version 3, `lib/months.js`; the Python and Worker copies must stay byte-identical).
+  A log save is **one commit of only the changed months** via the Git Data API, with
+  reload-and-retry when the branch moved. The app never writes `workout-log.csv`
+  (the `build-csv` Action rebuilds it) or the retired `workout-log.json`.
+  Screens never write the log directly: they queue an operation (`saveSession` /
+  `deleteSession` / `moveSessionTo` in `app/data.js`) that is shown at once and sent
+  in the background (`lib/outbox.js`).
+- Every GitHub API request is sent with `cache: 'no-cache'` (answers say
+  `max-age=60`; a stale branch head makes saves fail with 422).
 - One row per set. Session = gym_id + machine_id + date + variant. Saving replaces
   the session; changing the date moves it. Unknown entry fields survive edits.
 - `workout-log.csv` is read by header name, never by position.
@@ -43,8 +49,10 @@ This repo (`traintracksapp/traintracks`) is the **template** users copy with
 ## Where things are
 
 - `index.html`, `app/` (screens, state, the data layer in `app/data.js`), `lib/` (pure, tested logic)
-- `pipelines/garmin/` (Python; `.github/workflows/garmin.yml`), `worker/worker.js` (optional relay)
-- `scripts/migrate.mjs` (format version 1 → 2), `tests/` (unit, `tests/e2e/run.mjs` browser test)
+- `pipelines/garmin/` (Python; `.github/workflows/garmin.yml`), `.github/workflows/build-csv.yml`
+  (rebuilds the CSV), `worker/worker.js` (optional relay)
+- `scripts/migrate.mjs` (format version 1 → current), `scripts/split-log.mjs` (version 2 → 3),
+  `tests/` (unit, `tests/e2e/run.mjs` browser test)
 - `docs/`: SETUP, COACH, GARMIN, WORKER, DATA-FORMAT, DECISIONS, SPEC
 
 ## Working here

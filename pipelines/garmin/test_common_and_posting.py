@@ -308,6 +308,125 @@ class IndoorRouting(unittest.TestCase):
         self.assertIsNone(P.find_machine(gyms, "generic", machine_id="swim"))   # hidden
 
 
+MONTH_SAMPLE = [
+    {"id": "a", "date": "2026-11-04", "time": "07:30:00", "variant": ["incline", "wide"], "set": 1, "weight_lb": -85, "reps": 10,
+     "distance_mi": 1.9, "zone2_min": 1.73, "notes": "Bodyweight — \"ok\", ✓\ttab\nline 2", "garmin_id": None},
+    {"id": "b", "date": "2026-10-31", "set": 1, "duration_sec": 1800.0, "speed_mph": 3.3},
+    {"id": "c", "date": "2026-11-05", "set": 2, "reps": 0},
+    {"id": "d", "date": "2026-11-05", "set": 1, "reps": 3},
+]
+
+
+def rd(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+class MonthFiles(unittest.TestCase):
+    """Format version 3: log/YYYY-MM.json, written byte for byte as lib/months.js writes it."""
+
+    def test_split_order_and_text(self):
+        m = L.split_log(MONTH_SAMPLE)
+        self.assertEqual(sorted(m), ["2026-10.json", "2026-11.json"])
+        self.assertEqual([e["id"] for e in m["2026-11.json"]], ["c", "d", "a"])   # newest first, a day keeps its order
+        text = L.month_to_text(m["2026-10.json"])
+        self.assertEqual(text, '[\n{"id":"b","date":"2026-10-31","set":1,"duration_sec":1800,"speed_mph":3.3}\n]\n')
+        self.assertEqual(L.month_to_text([]), "[]\n")
+        self.assertEqual([e["id"] for e in L.join_months(m)], ["c", "d", "a", "b"])
+        self.assertEqual(L.month_name_of({"date": "bad"}), L.UNDATED)
+
+    def test_identical_to_javascript(self):
+        if not shutil.which("node"):
+            self.skipTest("node not available")
+        script = ("import('./lib/months.js').then(m => { const log = JSON.parse(process.argv[1]); const s = m.splitLog(log);"
+                  " process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(s).map(([p, e]) => [p, m.monthToText(e)])))); })")
+        js = subprocess.run(["node", "-e", script, "--", json.dumps(MONTH_SAMPLE)], cwd=ROOT, capture_output=True, text=True, timeout=30)
+        self.assertEqual(js.returncode, 0, js.stderr)
+        out = json.loads(js.stdout)
+        py = {f"log/{k}": L.month_to_text(v) for k, v in L.split_log(MONTH_SAMPLE).items()}
+        self.assertEqual(out, py)
+
+    def test_write_months_touches_only_changed_months(self):
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d, True)
+        log_dir = os.path.join(d, "log")
+        self.assertEqual(L.write_months(log_dir, {}, MONTH_SAMPLE), ["2026-10.json", "2026-11.json"])
+        before = L.read_months(log_dir)
+        self.assertEqual(L.write_months(log_dir, before, L.join_months(before)), [])
+        new = [{"id": "n", "date": "2026-11-06", "set": 1}] + L.join_months(before)
+        self.assertEqual(L.write_months(log_dir, before, new), ["2026-11.json"])
+        left = [e for e in new if e["date"].startswith("2026-11")]
+        self.assertEqual(L.write_months(log_dir, L.read_months(log_dir), left), ["2026-10.json"])
+        self.assertFalse(os.path.exists(os.path.join(log_dir, "2026-10.json")))
+
+
+class PostingLayouts(unittest.TestCase):
+    """post_zone_records.py end to end, in each layout a repo can be in during the 0.3.0 upgrade."""
+
+    def setUp(self):
+        import tempfile
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d, True)
+        rows = [{"date": "2026-11-07", "activity_id": "24000000123", "activity_type": "walking", "minute": f"2026-11-07 08:{m:02d}",
+                 "hr_avg_bpm": "105.0", "covered_sec": "60"} for m in range(20)]
+        with open(os.path.join(self.d, "cardio-minutes.csv"), "w", newline="") as f:
+            f.write(",".join(CM.FIELDNAMES) + "\n" + "".join(",".join(r[k] for k in CM.FIELDNAMES) + "\n" for r in rows))
+        write_json(os.path.join(self.d, "zones.json"), {"rhr_bpm": 60, "hr_max_bpm": 180})
+        self.old = [{"id": "o1", "date": "2026-10-02", "gym_id": "generic", "machine_id": "push-ups", "set": 1, "variant": [], "reps": 5}]
+
+    def run_post(self, *log_args):
+        return subprocess.run([sys.executable, os.path.join(HERE, "post_zone_records.py"), "--cardio", "cardio-minutes.csv", *log_args,
+                               "--zones", "zones.json", "--equipment", os.path.join(ROOT, "equipment"), "--mapping", "none.json"],
+                              cwd=self.d, capture_output=True, text=True, timeout=60)
+
+    def test_months_layout_writes_only_the_new_rows_month(self):
+        L.write_months(os.path.join(self.d, "log"), {}, self.old)
+        oct_before = rd(os.path.join(self.d, "log", "2026-10.json"))
+        r = self.run_post("--log-dir", "log")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        months = L.read_months(os.path.join(self.d, "log"))
+        self.assertEqual([e["garmin_id"] for e in months["2026-11.json"]], ["24000000123"])
+        self.assertEqual(rd(os.path.join(self.d, "log", "2026-10.json")), oct_before)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "workout-log.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.d, "workout-log.csv")), "the CSV is rebuilt by build-csv.yml")
+        again = self.run_post("--log-dir", "log")
+        self.assertIn("nothing to post", again.stdout)
+
+    def test_not_split_yet_old_workflow_keeps_working(self):
+        with open(os.path.join(self.d, "workout-log.json"), "w") as f:
+            f.write(L.to_json(self.old))
+        r = self.run_post("--log-json", "workout-log.json", "--log-csv", "workout-log.csv")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        log = json.loads(rd(os.path.join(self.d, "workout-log.json")))
+        self.assertEqual(len(log), 2)
+        self.assertEqual(rd(os.path.join(self.d, "workout-log.csv")), L.to_csv(log))
+        self.assertFalse(os.path.exists(os.path.join(self.d, "log")))
+
+    def test_not_split_yet_new_workflow_writes_the_single_file(self):
+        with open(os.path.join(self.d, "workout-log.json"), "w") as f:
+            f.write(L.to_json(self.old))
+        r = self.run_post("--log-dir", "log")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(len(json.loads(rd(os.path.join(self.d, "workout-log.json")))), 2)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "log")))
+
+    def test_split_repo_with_the_old_workflow_is_refused_and_nothing_written(self):
+        L.write_months(os.path.join(self.d, "log"), {}, self.old)
+        before = rd(os.path.join(self.d, "log", "2026-10.json"))
+        r = self.run_post("--log-json", "workout-log.json", "--log-csv", "workout-log.csv")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("Replace .github/workflows/garmin.yml", r.stderr)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.d, "log"))), ["2026-10.json"])
+        self.assertEqual(rd(os.path.join(self.d, "log", "2026-10.json")), before)
+        self.assertFalse(os.path.exists(os.path.join(self.d, "workout-log.json")))
+
+    def test_new_repo_with_the_new_workflow_starts_months(self):
+        r = self.run_post("--log-dir", "log")
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertEqual(sorted(os.listdir(os.path.join(self.d, "log"))), ["2026-11.json"])
+
+
 class CardioMinutes(unittest.TestCase):
     def test_minute_split_uses_tz(self):
         tz = ZoneInfo("America/New_York")

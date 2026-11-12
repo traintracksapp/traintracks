@@ -1,0 +1,6 @@
+[
+{"gym_id":"example-gym","gym":"Example Gym","room_id":"weights","room":"Weight Room","time":"18:00:00","variant":[],"notes":"","id":"f1","date":"2026-11-04","machine_id":"r02","machine":"Seated Row","set":1,"weight_lb":60,"reps":12},
+{"gym_id":"example-gym","gym":"Example Gym","room_id":"weights","room":"Weight Room","time":"18:00:00","variant":[],"notes":"","id":"f2","date":"2026-11-04","machine_id":"r02","machine":"Seated Row","set":2,"weight_lb":70,"reps":10},
+{"gym_id":"example-gym","gym":"Example Gym","room_id":"weights","room":"Weight Room","time":"18:00:00","variant":[],"notes":"harder than expected","id":"f3","date":"2026-11-02","machine_id":"assist","machine":"Assisted Pull-up","set":1,"weight_lb":-100,"reps":8},
+{"gym_id":"example-gym","gym":"Example Gym","room_id":"cardio","room":"Cardio","time":"18:00:00","variant":[],"notes":"","id":"f4","date":"2026-11-01","machine_id":"tm","machine":"Treadmill","set":1,"duration_sec":1800,"speed_mph":3.3,"incline_pct":4,"hr_avg_bpm":118}
+]

@@ -10,14 +10,19 @@
 // (?token=<SECRET_TOKEN> also works, for older callers). Whitespace around the
 // secret is ignored on both sides.
 //
+// The log is one file per month, log/YYYY-MM.json (format version 3,
+// docs/DATA-FORMAT.md); a GitHub Action rebuilds workout-log.csv from it about
+// a minute after each write. Callers still see and send the whole log.
+//
 // Endpoints (all JSON unless noted):
 //   GET  /                 health check: name, version and the endpoint list
-//   GET  /log              workout-log.csv (text/csv)
-//   GET  /log-json         { log_json, head, entries, csv_rows, in_sync } read live; send `head` back to /log-write
-//   POST /log-write        body { log_json, base_head, message?, allow_shrink? }
-//                          Commits workout-log.json AND workout-log.csv (built here from the JSON) as ONE
-//                          commit on top of base_head. 409 if the branch moved since that read; 409 if the
-//                          log would shrink without allow_shrink.
+//   GET  /log              workout-log.csv (text/csv; may be about a minute behind a write)
+//   GET  /log-json         { log_json, head, entries, months, csv_rows, in_sync } read live: log_json is
+//                          the whole log (all months, newest first); send `head` back to /log-write
+//   POST /log-write        body { log_json, base_head, message?, allow_shrink? }: the whole log, edited.
+//                          Commits only the month files that changed, as ONE commit on top of base_head.
+//                          409 if the branch moved since that read; 409 if the log would shrink without
+//                          allow_shrink; 409 if the repo's log is not split into months yet.
 //   GET  /profile, /goals, /garmin   profile.json, goals.json, garmin-recent.json
 //   POST /plan             body = the plan JSON (suggested-workout.json, format version 2)
 //   POST /trigger-garmin   body { fetch_limit?, max_days? }   runs the garmin.yml workflow
@@ -30,7 +35,7 @@
 //   GITHUB_REPO   your repository name (usually traintracks)
 //   GITHUB_BRANCH optional, default main
 
-const VERSION = '0.2.1';
+const VERSION = '0.3.0';
 const LOG_COLUMNS = [
   'id', 'date', 'time', 'gym_id', 'gym', 'room_id', 'room', 'machine_id', 'machine',
   'variant', 'set', 'weight_lb', 'reps', 'duration_sec', 'duration_min', 'distance_mi', 'speed_mph',
@@ -61,6 +66,29 @@ export function csvRow(e) {
 export const logToCSV = log => [LOG_COLUMNS.join(','), ...log.map(e => { const r = csvRow(e); return LOG_COLUMNS.map(c => csvField(r[c])).join(','); })].join('\n') + '\n';
 export const logToJSON = log => JSON.stringify(log, null, 2) + '\n';
 
+// ---- the month files, exactly as lib/months.js ----
+const MONTH_FILE = /^log\/(\d{4})-(0[1-9]|1[0-2])\.json$/;
+const UNDATED = 'log/undated.json';
+export const isMonthFile = p => MONTH_FILE.test(p) || p === UNDATED;
+export function monthPathOf(e) {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])-\d{2}/.exec((e && typeof e.date === 'string' && e.date) || '');
+  return m ? `log/${m[1]}-${m[2]}.json` : UNDATED;
+}
+const sortMonthPaths = paths => [...paths].sort((a, b) => (a === UNDATED ? 1 : b === UNDATED ? -1 : a < b ? 1 : a > b ? -1 : 0));
+export function splitLog(log) {
+  const out = {};
+  for (const e of log || []) (out[monthPathOf(e)] ||= []).push(e);
+  for (const p of Object.keys(out)) {
+    out[p] = out[p].map((e, i) => [e, i]).sort(([a, i], [b, j]) => {
+      const x = (a && a.date) || '', y = (b && b.date) || '';
+      return x < y ? 1 : x > y ? -1 : i - j;
+    }).map(([e]) => e);
+  }
+  return out;
+}
+export const joinMonths = months => sortMonthPaths(Object.keys(months)).flatMap(p => months[p] || []);
+export const monthToText = entries => (entries && entries.length ? '[\n' + entries.map(e => JSON.stringify(e)).join(',\n') + '\n]\n' : '[]\n');
+
 const b64 = s => { const b = new TextEncoder().encode(s); let x = ''; for (let i = 0; i < b.length; i += 0x8000) x += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(x); };
 const unb64 = s => new TextDecoder().decode(Uint8Array.from(atob(String(s).replace(/\s/g, '')), c => c.charCodeAt(0)));
 
@@ -89,6 +117,26 @@ export default {
       return text;
     };
     const head = async () => JSON.parse(await gh('GET', `/git/ref/heads/${encodeURIComponent(branch)}`)).object.sha;
+    const RAW = 'application/vnd.github.raw+json';
+    // The log at a commit: its tree, layout ('months', 'single' = not split yet, 'none') and entries.
+    const readLog = async ref => {
+      const t = JSON.parse(await gh('GET', `/git/trees/${encodeURIComponent(ref)}?recursive=1`));
+      const files = Object.fromEntries((t.tree || []).filter(x => x.type === 'blob').map(x => [x.path, x.sha]));
+      const paths = Object.keys(files).filter(isMonthFile);
+      const blob = sha => gh('GET', `/git/blobs/${sha}`, null, RAW);
+      const months = {};
+      let layout = 'none', log = [];
+      if (paths.length) {
+        layout = 'months';
+        await Promise.all(paths.map(async p => { months[p] = JSON.parse(await blob(files[p])); }));
+        log = joinMonths(months);
+      } else if (files['workout-log.json']) {
+        layout = 'single';
+        log = JSON.parse(await blob(files['workout-log.json']));
+      }
+      const csv = files['workout-log.csv'] ? await blob(files['workout-log.csv']) : null;
+      return { tree: t.sha, layout, months, log, csv };
+    };
     const getFile = async (path, ref = branch) => {
       try {
         const j = JSON.parse(await gh('GET', `/contents/${path}?ref=${encodeURIComponent(ref)}`));
@@ -111,10 +159,9 @@ export default {
       }
       if (request.method === 'GET' && url.pathname === '/log-json') {
         const h = await head();
-        const [j, c] = await Promise.all([getFile('workout-log.json', h), getFile('workout-log.csv', h)]);
-        const log = j ? JSON.parse(j) : [];
-        const inSync = c === logToCSV(log);
-        return json({ ok: true, head: h, log_json: j || '[]\n', entries: log.length, csv_rows: c ? c.trim().split('\n').length - 1 : 0, in_sync: inSync });
+        const { log, layout, months, csv } = await readLog(h);
+        return json({ ok: true, head: h, log_json: logToJSON(log), entries: log.length, layout, months: Object.keys(months).length,
+          csv_rows: csv ? csv.trim().split('\n').length - 1 : 0, in_sync: csv === logToCSV(log) });
       }
 
       // ---- writes ----
@@ -151,22 +198,25 @@ export default {
 
         const h = await head();
         if (h !== baseHead) return json({ error: 'The repo changed since you read the log. Nothing was written. GET /log-json again, re-apply your change to that copy, and resend.', head: h }, 409);
-        const current = await getFile('workout-log.json', h);
-        const before = current ? JSON.parse(current).length : 0;
+        const cur = await readLog(h);
+        if (cur.layout === 'single') return json({ error: 'The log is still one file (workout-log.json): split it into months first (TrainTracks 0.3.0, docs/SETUP.md "Upgrading to 0.3.0"). Nothing was written.' }, 409);
+        const before = cur.log.length;
         if (log.length < before && !allowShrink) return json({ error: `Refusing to shrink the log (${before} → ${log.length} entries). If deletions are intended, resend with "allow_shrink": true.` }, 409);
 
-        // One commit with both files, on top of base_head; the ref update is not forced.
-        const commit = JSON.parse(await gh('GET', `/git/commits/${h}`));
+        // Only the months that changed, in one commit on top of base_head; the ref update is not forced.
+        const next = splitLog(log);
         const tree = [];
-        for (const [path, text] of [['workout-log.json', logToJSON(log)], ['workout-log.csv', logToCSV(log)]]) {
-          const blob = JSON.parse(await gh('POST', '/git/blobs', { content: b64(text), encoding: 'base64' }));
-          tree.push({ path, mode: '100644', type: 'blob', sha: blob.sha });
+        for (const [path, entries] of Object.entries(next)) {
+          const text = monthToText(entries);
+          if (!cur.months[path] || monthToText(cur.months[path]) !== text) tree.push({ path, mode: '100644', type: 'blob', content: text });
         }
-        const t = JSON.parse(await gh('POST', '/git/trees', { base_tree: commit.tree.sha, tree }));
+        for (const path of Object.keys(cur.months)) if (!(path in next)) tree.push({ path, mode: '100644', type: 'blob', sha: null });
+        if (!tree.length) return json({ ok: true, message: `No change: the log already holds these ${log.length} entries.`, head: h, months_written: [] });
+        const t = JSON.parse(await gh('POST', '/git/trees', { base_tree: cur.tree, tree }));
         const c = JSON.parse(await gh('POST', '/git/commits', { message: message || 'Update workout log via Worker', tree: t.sha, parents: [h] }));
         try { await gh('PATCH', `/git/refs/heads/${encodeURIComponent(branch)}`, { sha: c.sha, force: false }); }
         catch (e) { if (e.status === 422) return json({ error: 'The repo changed while writing. Nothing was written. GET /log-json again and redo the change.' }, 409); throw e; }
-        return json({ ok: true, message: `Log saved: ${log.length} entries (was ${before}).`, head: c.sha });
+        return json({ ok: true, message: `Log saved: ${log.length} entries (was ${before}); ${tree.length} month file(s) written. workout-log.csv follows in about a minute.`, head: c.sha, months_written: tree.map(x => x.path).sort() });
       }
 
       return json({ error: `No such endpoint: ${request.method} ${url.pathname}` }, 404);

@@ -34,9 +34,9 @@ Send the secret as `Authorization: Bearer <SECRET_TOKEN>` (`?token=` also works)
 | Request | Does |
 |---|---|
 | `GET /` | health check |
-| `GET /log` | `workout-log.csv` |
-| `GET /log-json` | `{ log_json, head, entries, csv_rows, in_sync }`, read live |
-| `POST /log-write` | body `{ log_json, base_head, message?, allow_shrink? }`. Writes the JSON **and** the CSV (built from the JSON) as one commit on top of `base_head` |
+| `GET /log` | `workout-log.csv` (rebuilt by an Action about a minute after each change) |
+| `GET /log-json` | `{ log_json, head, entries, layout, months, csv_rows, in_sync }`, read live. `log_json` is the **whole** log (every month file, newest first) |
+| `POST /log-write` | body `{ log_json, base_head, message?, allow_shrink? }`: the whole log, edited. Writes **only the month files that changed** (`log/YYYY-MM.json`) as one commit on top of `base_head`, and answers with `months_written`. The CSV follows about a minute later |
 | `GET /profile`, `/goals`, `/garmin` | those files |
 | `POST /plan` | body = the plan JSON (see [COACH.md](COACH.md)) |
 | `POST /trigger-garmin` | body `{ fetch_limit?, max_days? }`: runs the Garmin workflow |
@@ -45,7 +45,13 @@ Send the secret as `Authorization: Bearer <SECRET_TOKEN>` (`?token=` also works)
 `POST /log-write` with the `head` you got as `base_head`. If anything else wrote
 to the repo in between (the app, the Garmin workflow), the Worker answers
 **409** and writes nothing: read again and redo the change. A write that would
-remove entries is refused unless you send `"allow_shrink": true`.
+remove entries is refused unless you send `"allow_shrink": true`. A repository
+whose log is still one file (`workout-log.json`, before the 0.3.0 split) can be
+read, but writes are refused with a 409 until it is split.
+
+**After updating TrainTracks to 0.3.0, deploy the new `worker/worker.js`.** An
+older Worker reads and writes the retired `workout-log.json`, so its writes
+would not reach the log.
 
 ## Errors
 

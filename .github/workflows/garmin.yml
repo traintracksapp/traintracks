@@ -7,9 +7,11 @@
 #     Variables: GARMIN_ENABLED = true
 #                GARMIN_TZ      = America/New_York   (your IANA time zone)
 #
-# Writes (format version 2, docs/DATA-FORMAT.md): garmin-recent.json,
-# cardio-minutes.csv, cardio-buckets.csv, daily-wellness.csv,
-# body-composition.csv, blood-pressure.csv, and new Garmin rows in the log.
+# Writes (docs/DATA-FORMAT.md): garmin-recent.json, cardio-minutes.csv,
+# cardio-buckets.csv, daily-wellness.csv, body-composition.csv,
+# blood-pressure.csv, and new Garmin rows in the log: the month files under
+# log/ (format version 3; build-csv.yml then rebuilds workout-log.csv), or
+# workout-log.json + .csv in a repo not split yet.
 #
 # Each step is independent (continue-on-error), so a Garmin hiccup in one
 # feed never blocks the others. Everything is committed once at the end,
@@ -88,13 +90,13 @@ jobs:
         continue-on-error: true
         run: |
           python pipelines/garmin/post_zone_records.py \
-            --cardio cardio-minutes.csv --log-json workout-log.json --log-csv workout-log.csv \
+            --cardio cardio-minutes.csv --log-dir log \
             --garmin garmin-recent.json --zones pipelines/garmin/zones.json
 
       - name: Commit and push
         run: |
-          for f in garmin-recent.json cardio-minutes.csv cardio-buckets.csv daily-wellness.csv body-composition.csv blood-pressure.csv workout-log.json workout-log.csv; do
-            if [ -f "$f" ]; then git add -- "$f"; fi
+          for f in garmin-recent.json cardio-minutes.csv cardio-buckets.csv daily-wellness.csv body-composition.csv blood-pressure.csv workout-log.json workout-log.csv log; do
+            if [ -e "$f" ]; then git add -- "$f"; fi
           done
           if git diff --cached --quiet; then
             echo "No changes."

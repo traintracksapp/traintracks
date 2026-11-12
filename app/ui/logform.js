@@ -131,7 +131,7 @@ async function save() {
     back();
     if (fromPlan && logHooks.afterPlanLog) logHooks.afterPlanLog();
   } catch (e) {
-    console.error(e);
+    if (!e.refused) console.error(e);
     toast(`Save failed: ${e.message}`, 'err');
   }
 }

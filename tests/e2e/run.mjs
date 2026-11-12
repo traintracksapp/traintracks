@@ -16,7 +16,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createFakeGitHub } from '../fake-github.js';
 import { parseCSV } from '../../lib/csv.js';
-import { LOG_COLUMNS } from '../../lib/log.js';
+import { LOG_COLUMNS, logToJSON } from '../../lib/log.js';
+import { isMonthFile, joinMonths, monthToText, csvFromMonthFiles } from '../../lib/months.js';
 
 const { chromium } = createRequire(import.meta.url)(process.env.PLAYWRIGHT_PATH || 'playwright');
 const ROOT = path.resolve(new URL('../..', import.meta.url).pathname);
@@ -93,7 +94,11 @@ async function openPage(colorScheme = 'dark') {
 let n = 0;
 const results = [];
 const check = (name, ok, info) => { results.push({ name, ok }); console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${!ok && info ? ` — ${info}` : ''}`); };
-const readLog = () => JSON.parse(fake.read('workout-log.json') || '[]');
+// The log is one file per month (format version 3).
+const monthTexts = () => Object.fromEntries(fake.paths().filter(isMonthFile).map(p => [p, fake.read(p)]));
+const readLog = () => joinMonths(Object.fromEntries(Object.entries(monthTexts()).map(([p, t]) => [p, JSON.parse(t)])));
+const allFiles = () => Object.fromEntries(fake.paths().map(p => [p, fake.read(p)]));
+const changedSince = before => { const now = allFiles(); return [...new Set([...Object.keys(before), ...Object.keys(now)])].filter(p => before[p] !== now[p]).sort(); };
 
 const { ctx, page } = await openPage();
 const shot = async name => { await page.waitForTimeout(200); await page.screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-${name}.png`), fullPage: true }); };
@@ -146,6 +151,7 @@ await page.click('[data-act="start-log"]');
 await shot('logform');
 const commitsBefore = fake.commitCount();
 const sizeBefore = readLog().length;
+const filesBefore = allFiles();
 let tag = null;
 const chip = await page.$('[data-act="log-var"]');
 if (chip) { tag = await chip.getAttribute('data-t'); await chip.click(); await page.waitForTimeout(150); }
@@ -165,15 +171,22 @@ const mine = log1.filter(e => e.notes === 'e2e: smoke test, with a comma');
 check('new entries written in format version 2', mine.length === 1 && mine[0].id && mine[0].gym_id && mine[0].machine_id && /^\d\d:\d\d:\d\d$/.test(mine[0].time) && !('machineId' in mine[0]));
 check('all sets saved', log1.length === sizeBefore + rows0 + 1, `${sizeBefore} -> ${log1.length}`);
 if (tag) check('variation stored on every set', log1.filter(e => e.date === mine[0].date && e.machine_id === mine[0].machine_id && (e.variant || []).includes(tag)).length === rows0 + 1);
-const csv1 = parseCSV(fake.read('workout-log.csv'));
-check('CSV has the version 2 header', fake.read('workout-log.csv').split('\n')[0] === LOG_COLUMNS.join(','));
-check('CSV matches the JSON row for row', csv1.length === log1.length && csv1.every((r, i) => r.id === log1[i].id));
+const touched1 = changedSince(filesBefore);
+check('the save wrote only its month file', touched1.length === 1 && touched1[0] === `log/${mine[0].date.slice(0, 7)}.json`, touched1.join(', '));
+check('the app no longer writes workout-log.json or the CSV', fake.read('workout-log.json') == null && fake.read('workout-log.csv') === filesBefore['workout-log.csv']);
+check('the month file has one entry per line', fake.read(touched1[0]).split('\n').filter(l => l.startsWith('{')).length === JSON.parse(fake.read(touched1[0])).length);
+// what the build-csv Action makes from the months
+const csvText = csvFromMonthFiles(monthTexts());
+const csv1 = parseCSV(csvText);
+check('CSV has the header', csvText.split('\n')[0] === LOG_COLUMNS.join(','));
+check('CSV built from the months matches the log row for row', csv1.length === log1.length && csv1.every((r, i) => r.id === log1[i].id));
 check('notes keep their comma in the CSV', csv1.some(r => r.notes === 'e2e: smoke test, with a comma'));
 
 // 4. Edit the session and change its date: it moves, nothing duplicated
 await page.click('[data-act="edit-session"]');
 await shot('editform');
 await page.fill('#ldate', '2026-01-02');
+const filesBeforeMove = allFiles();
 await page.click('[data-act="log-save"]');
 const t2 = await waitToast();
 check('edit saved', /saved/.test(t2), t2);
@@ -182,6 +195,7 @@ const movedSets = log2.filter(e => e.machine_id === mine[0].machine_id && e.gym_
 check('date change moved the session (no duplicate)', movedSets.length === rows0 + 1 && !log2.some(e => e.id === mine[0].id && e.date !== '2026-01-02'));
 check('log size unchanged after the move', log2.length === log1.length, `${log1.length} -> ${log2.length}`);
 check('ids kept through the edit', log2.some(e => e.id === mine[0].id));
+check('moving to another month wrote exactly the two months', changedSince(filesBeforeMove).join() === ['log/2026-01.json', touched1[0]].sort().join(), changedSince(filesBeforeMove).join(', '));
 
 // 5. Assisted machine: negative weight is accepted and shown as assistance
 if (usingFixture) {
@@ -383,14 +397,14 @@ if (usingFixture) {
   await page.waitForTimeout(300);
   check('nothing changed on GitHub: one call (the branch head)', apiCalls.length === 1 && apiCalls[0] === 'GET /git/ref/heads/main', apiCalls.join(', '));
   // another device logs a set: the next open downloads only the log and shows the set
-  const ext = readLog();
-  ext.unshift({ ...ext.find(e => e.machine_id === 'r02'), id: 'from-other-device', date: '2026-11-08', set: 1, notes: 'logged on another device' });
-  fake.write({ 'workout-log.json': JSON.stringify(ext, null, 2) + '\n' }, 'another device');
+  const nov = JSON.parse(fake.read('log/2026-11.json'));
+  nov.unshift({ ...readLog().find(e => e.machine_id === 'r02'), id: 'from-other-device', date: '2026-11-08', set: 1, notes: 'logged on another device' });
+  fake.write({ 'log/2026-11.json': monthToText(nov) }, 'another device');
   await reopen();
   await page.waitForFunction(() => document.body.dataset.load === 'fresh', null, { timeout: 20000 });
   await page.waitForTimeout(300);
   const blobs = apiCalls.filter(c => c.startsWith('GET /git/blobs/'));
-  check('only the changed file is downloaded, as a raw blob', blobs.length === 1 && apiCalls.length === 3 && !apiCalls.some(c => c.includes('/contents/')), apiCalls.join(', '));
+  check('only the changed month is downloaded, as a raw blob', blobs.length === 1 && apiCalls.length === 3 && !apiCalls.some(c => c.includes('/contents/')), apiCalls.join(', '));
   await openMachineByName('Example Gym', 'Seated Row');
   check('the other device\'s set is shown', (await text('#detailbody')).includes('logged on another device'));
 }
@@ -398,14 +412,35 @@ if (usingFixture) {
 await ctx.close();
 
 // 9. Light theme, and a repo still in the old format: banner, and saving refuses
-const old = createFakeGitHub({ ...seed, 'workout-log.json': JSON.stringify([{ machineId: 'push-ups', date: '2026-11-01', set: 1, reps: 5, gymId: 'generic' }]) });
+const old = createFakeGitHub({ ...seed, 'log/2026-11.json': JSON.stringify([{ machineId: 'push-ups', date: '2026-11-01', set: 1, reps: 5, gymId: 'generic' }]) });
 const oldFetch = fake.fetch;
 fake.fetch = old.fetch;
 const { ctx: ctx2, page: p2 } = await openPage('light');
 await p2.screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-old-format-light.png`), fullPage: true });
 check('old-format data shows a banner', ((await p2.textContent('#homebody')) || '').includes('old format'));
-fake.fetch = oldFetch;
 await ctx2.close();
+
+// 10. Updated to 0.3.0 but the log not split yet: shown, with a notice, and saving is off
+if (usingFixture) {
+  const single = Object.fromEntries(Object.entries(seed).filter(([p]) => !isMonthFile(p)));
+  const fixtureLog = joinMonths(Object.fromEntries(Object.entries(seed).filter(([p]) => isMonthFile(p)).map(([p, t]) => [p, JSON.parse(t)])));
+  const unsplit = createFakeGitHub({ ...single, 'workout-log.json': logToJSON(fixtureLog) });
+  fake.fetch = unsplit.fetch;
+  const { ctx: ctx3, page: p3 } = await openPage();
+  await p3.screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-not-split.png`), fullPage: true });
+  check('an unsplit log shows the split notice', ((await p3.textContent('#homebody')) || '').includes('still one file'));
+  await p3.click('#homebody .row:has-text("Example Gym")');
+  await p3.click('#roomsbody .row:has-text("Weight Room")');
+  await p3.click('.mc:has-text("Seated Row")');
+  check('an unsplit log is still shown (history)', /70 lb/.test((await p3.textContent('#detailbody')) || ''), await p3.textContent('#detailbody'));
+  const nBefore = unsplit.commitCount();
+  await p3.click('[data-act="start-log"]');
+  await p3.click('[data-act="log-save"]');
+  await p3.waitForTimeout(500);
+  check('saving is refused with the split message, nothing written', /split into months/.test((await p3.textContent('#toast')) || '') && unsplit.commitCount() === nBefore, await p3.textContent('#toast'));
+  await ctx3.close();
+}
+fake.fetch = oldFetch;
 
 await browser.close();
 server.close();

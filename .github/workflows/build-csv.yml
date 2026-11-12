@@ -1,0 +1,68 @@
+# Rebuild workout-log.csv from the monthly log files (format version 3).
+#
+# The app, the Worker and the Garmin workflow write only log/YYYY-MM.json;
+# this keeps the CSV export (read by the coach and spreadsheets) in step, about
+# a minute behind. It uses the same CSV code as the app (lib/log.js, through
+# lib/months.js), with Node and no build step.
+#
+# Runs on a push that changes the log (the app and the Worker push with your
+# token, which starts workflows), and after the Garmin workflow (its pushes use
+# GitHub's own token, which does not start workflows). It can't loop: it
+# commits only workout-log.csv, which is not under log/, its commit says
+# [skip ci], and its push uses GitHub's own token.
+name: build-csv
+
+on:
+  push:
+    branches: [main]
+    paths: ['log/**', 'workout-log.json']   # workout-log.json: something old wrote the retired file; put the CSV back
+  workflow_run:
+    workflows: [garmin]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-csv
+  cancel-in-progress: false
+
+jobs:
+  csv:
+    # After the Garmin workflow only when it ran (not when it is switched off and skipped).
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Rebuild and commit workout-log.csv
+        run: |
+          git config user.name "traintracks-csv"
+          git config user.email "actions@users.noreply.github.com"
+          # Rebuilt from the newest main each try, so a push that lost a race just tries again.
+          for attempt in 1 2 3 4; do
+            git fetch --quiet origin main
+            git reset --quiet --hard origin/main
+            if [ ! -d log ]; then echo "No log/ folder (not split into months yet): nothing to do."; exit 0; fi
+            node --input-type=module -e '
+              import fs from "node:fs";
+              import { csvFromMonthFiles } from "./lib/months.js";
+              const files = {};
+              for (const n of fs.readdirSync("log")) files["log/" + n] = fs.readFileSync("log/" + n, "utf8");
+              fs.writeFileSync("workout-log.csv", csvFromMonthFiles(files));
+            '
+            git add workout-log.csv
+            if git diff --cached --quiet; then echo "workout-log.csv is up to date."; exit 0; fi
+            git commit --quiet -m "Rebuild workout-log.csv from log/ [skip ci]"
+            if git push --quiet origin HEAD:main; then echo "workout-log.csv rebuilt."; exit 0; fi
+            echo "main moved; trying again"
+            sleep $((attempt * 5))
+          done
+          echo "Could not push after 4 tries"; exit 1

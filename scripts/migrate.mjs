@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
  * Convert a LogTrim or TrainTracks 0.1.0 repo checkout (format version 1) into
- * format version 2, writing the result to a separate output folder. The
- * source folder is only read, never changed.
+ * the current format (version 2 data, in version 3's monthly log files),
+ * writing the result to a separate output folder. The source folder is only
+ * read, never changed.
  *
  *   node scripts/migrate.mjs <source-dir> <output-dir> [--fixups <corrections.json>]
  *
  * The optional corrections file is the owner's own (see applyFixups in
  * lib/migrate.js); keep it outside the repo.
  *
- * Converts: workout-log.json (+ CSV), equipment/**\/gym.json,
+ * Converts: workout-log.json (written as log/YYYY-MM.json + workout-log.csv), equipment/**\/gym.json,
  * equipment/generic.local.json, goals.json, profile.json and
  * suggested-workout.json. Copies gym images. Prints a report of every
  * conversion rule and anything it could not map.
@@ -19,7 +20,8 @@ import path from 'node:path';
 import { convertLog, convertGym, convertLocalOverrides, applyFixups, convertGoals, convertProfile, convertPlan, v1MachineTypes,
   convertCardioMinutesCSV, convertBucketsCSV, convertWellnessCSV, convertZones, convertCorrections, convertMapping,
   dropRemappedLocalMachines, remapMapping } from '../lib/migrate.js';
-import { logToJSON, logToCSV } from '../lib/log.js';
+import { logToCSV } from '../lib/log.js';
+import { splitLog, monthToText } from '../lib/months.js';
 
 const args = process.argv.slice(2);
 const fi = args.indexOf('--fixups');
@@ -83,7 +85,8 @@ if (fixupsPath) {
   local2 = dropRemappedLocalMachines(local2, Object.keys(remapTargets));
 }
 if (local2) write('equipment/generic.local.json', JSON.stringify(local2, null, 2) + '\n');
-write('workout-log.json', logToJSON(r.log));
+// Format version 3: one file per month (docs/DATA-FORMAT.md); the CSV export from the same log.
+for (const [p, entries] of Object.entries(splitLog(r.log))) write(p, monthToText(entries));
 write('workout-log.csv', logToCSV(r.log));
 
 // Goals, profile, plan
@@ -114,7 +117,7 @@ for (const f of ['VERSION']) if (fs.existsSync(path.join(src, f))) write(f, fs.r
 // Report
 console.log(`Source: ${src}\nOutput: ${dst}\n`);
 console.log(`Gyms converted: ${gyms.length}${local ? ' (+ generic.local.json)' : ''}`);
-console.log(`Log entries: ${v1.length} in, ${r.log.length} out`);
+console.log(`Log entries: ${v1.length} in, ${r.log.length} out, in ${Object.keys(splitLog(r.log)).length} month files under log/ (delete workout-log.json when you copy them in)`);
 console.log(`Also converted: ${[...['goals.json', 'profile.json', 'suggested-workout.json'].filter(f => fs.existsSync(path.join(src, f))), ...garminDone].join(', ') || 'nothing else'}${goalNotes.length ? `\n  ${goalNotes.join('\n  ')}` : ''}\n`);
 console.log('Conversions applied (entries per rule):');
 for (const [k, v] of Object.entries(r.counts).sort((a, b) => a[0].localeCompare(b[0]))) console.log(`  ${String(v).padStart(5)}  ${k}`);
