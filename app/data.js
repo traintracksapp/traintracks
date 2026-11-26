@@ -25,7 +25,7 @@ import { sortLog } from '../lib/log.js';
 import { applyGenericOverrides, genericOverridesFrom, serialiseGym, gymPathFor, GENERIC_ID } from '../lib/gyms.js';
 import { parseWellnessCSV, parseBucketsCSV } from '../lib/goals.js';
 import { convertGym } from '../lib/migrate.js';
-import { validSnapshot, toDownload, nextFiles, changedPaths, makeSnapshot, withFile, withLogSave } from '../lib/snapshot.js';
+import { validSnapshot, toDownload, nextFiles, changedPaths, makeSnapshot, withFile, withLogSave, coversAppFiles } from '../lib/snapshot.js';
 import { readSnapshot, writeSnapshot } from './devicestore.js';
 import { S, hasCfg } from './state.js';
 
@@ -235,7 +235,8 @@ export async function loadAll(onStatus = () => {}, { force = false } = {}) {
     const gen = saves;
     let head;
     try { head = await r.headSha(); } catch (e) { throw await explain(r, e); }
-    if (force || !(snap && snap.head === head)) {
+    // A device copy made by an older version may lack files this one reads (lib/snapshot.js, coversAppFiles).
+    if (force || !(snap && snap.head === head && coversAppFiles(snap))) {
       onStatus('Loading your data…');
       const t = await r.treeAt(head);
       const have = snap && !force ? snap.files : {};

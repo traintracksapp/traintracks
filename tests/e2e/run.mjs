@@ -643,6 +643,27 @@ if (usingFixture) {
   check('report lists last night\'s sleep under today', c.rows.length === days.length + 1 && c.rows[c.rows.length - 1] === fmtShortDate(today), c.rows.join());
   check('report counts today in the sleep days', c.sub.includes(`${days.length + 1} day`), c.sub);
   check('today\'s steps are not taken from the snapshot', c.steps.length === days.length, c.steps.join());
+  // A device copy saved by 0.4.2 (no appFiles, no garmin-recent.json) at the current head: 0.4.4 still finds the file.
+  await o.page.evaluate(() => new Promise((resolve, reject) => {
+    const req = indexedDB.open('traintracks');
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => {
+      const tx = req.result.transaction('snapshots', 'readwrite'), st = tx.objectStore('snapshots');
+      st.openCursor().onsuccess = e => {
+        const cur = e.target.result; if (!cur) return;
+        const v = { ...cur.value, files: { ...cur.value.files } };
+        delete v.appFiles; delete v.files['garmin-recent.json'];
+        cur.update(v); cur.continue();
+      };
+      tx.oncomplete = () => { req.result.close(); resolve(); };
+      tx.onerror = () => reject(tx.error);
+    };
+  }));
+  await o.page.reload();
+  await o.page.waitForFunction(() => !document.getElementById('ld').classList.contains('on'), null, { timeout: 20000 });
+  await o.page.waitForTimeout(500);
+  c = await sleepCard(o.page);
+  check('a device copy from an older version gets garmin-recent.json at the same head', c.rows.length === days.length + 1 && c.rows[c.rows.length - 1] === fmtShortDate(today), c.rows.join());
   await o.ctx.close();
   // An unreadable garmin-recent.json is ignored: the report works from the CSV alone.
   fake.fetch = createFakeGitHub({ ...base, 'garmin-recent.json': '{ not json' }).fetch;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAppFile, toDownload, nextFiles, changedPaths, makeSnapshot, validSnapshot, withFile, withLogSave } from '../lib/snapshot.js';
+import { isAppFile, toDownload, nextFiles, changedPaths, makeSnapshot, validSnapshot, withFile, withLogSave, coversAppFiles, APP_FILES } from '../lib/snapshot.js';
 
 const tree = {
   'log/2026-11.json': 'L1', 'log/2026-10.json': 'K1', 'workout-log.csv': 'C1', 'profile.json': 'P1', 'VERSION': 'V1',
@@ -83,4 +83,21 @@ test('withLogSave: built on the snapshot head → the new commit is the head; el
   assert.ok(!('log/2026-09.json' in a.files), 'a month emptied by the save is dropped');
   const b = withLogSave(s, { ...res, parent: 'c9' }); // someone else wrote in between
   assert.equal(b.head, null);
+});
+
+test('coversAppFiles: a snapshot from code that read fewer files is compared with the tree once', () => {
+  const files = { 'profile.json': { sha: 'P1', text: '{}' } };
+  const s = makeSnapshot('c1', 't1', files);
+  assert.equal(coversAppFiles(s), true);
+  assert.equal(coversAppFiles(withFile(s, 'profile.json', '{}', 'P2')), true, 'kept through a write');
+  assert.equal(coversAppFiles(withLogSave(s, { parent: 'c1', commit: 'c2', tree: 't2', files: {} })), true, 'kept through a log save');
+  // Made by 0.4.3 or earlier: no appFiles; garmin-recent.json was never downloaded.
+  const { appFiles, ...old } = s;
+  assert.equal(coversAppFiles(old), false);
+  assert.ok(validSnapshot(old), 'still a usable snapshot: only the missing files are downloaded');
+  assert.equal(coversAppFiles({ ...s, appFiles: APP_FILES.filter(p => p !== 'garmin-recent.json') }), false);
+  assert.equal(coversAppFiles(null), false);
+  // At the same head, the tree comparison downloads only what the old copy lacks.
+  const tree = { 'profile.json': 'P1', 'garmin-recent.json': 'G1' };
+  assert.deepEqual(toDownload(tree, old.files), ['garmin-recent.json']);
 });

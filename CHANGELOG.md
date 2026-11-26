@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.4 (26 Nov 2026)
+
+- **Fix: 0.4.3's last-night sleep and HRV did not show after updating.** The app keeps a copy of your repo's files on each device and, when nothing has been committed since, opens from it without downloading anything. A copy saved by 0.4.2 or earlier never had `garmin-recent.json` (those versions did not read it), so until the next commit to the repo (usually the next Garmin sync) the report kept leaving last night out, on every device and after closing the browser. The device copy now records which files it was made for, and a copy from an older version is checked against the repo once, downloading only the missing files. **Settings → Reload data from GitHub** also fixes it at once on 0.4.3.
+- The version the app reports for its own code now matches the release (it still said 0.4.2).
+- The data format is unchanged; the Garmin pipeline and the Worker need no update.
+
 ## 0.4.3 (25 Nov 2026)
 
 - **Last night's sleep and HRV count in this week's report.** Garmin files a night's sleep under the day you wake up, but `daily-wellness.csv` gets a day only once it is over, so "Average sleep" and "Average HRV" left last night out until the next day (an average shown as 7.0 h "below target" was really 7.2 h). The report now adds today's sleep and HRV from `garmin-recent.json`, which the Garmin sync already writes: they show under today's date in the per-day list and in the day count. Steps, resting heart rate and other daytime numbers still wait for the finished day. If `daily-wellness.csv` already has the day, its row is used.

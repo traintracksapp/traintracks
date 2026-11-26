@@ -165,6 +165,17 @@ saw only the code rediscovered a deliberate decision as a bug.
   only when every file in it is known to match that commit: after the app writes
   a single file, or saves the log on top of a newer head, the head is cleared and
   the next open compares the tree.
+- **A device copy knows which files it was made for** (0.4.4). Opening skips
+  all downloads when the branch head equals the snapshot's head, so a file a new
+  version starts reading (`garmin-recent.json` in 0.4.3) was missing until the
+  next commit to the repo: 0.4.3 showed no last-night sleep on any device that
+  had opened the repo with 0.4.2 after the update commit. Snapshots now carry
+  `appFiles` (the `APP_FILES` list of the code that made them); one that does
+  not cover the current list is compared with the tree once
+  (`coversAppFiles`), which downloads only the missing files. Not a
+  `SNAPSHOT_VERSION` bump: that would download the whole log again. Adding a
+  file to `APP_FILES` needs nothing more; widening `isAppFile` some other way
+  (a new folder) needs the same kind of check.
 - **Every GitHub API request uses `cache: 'no-cache'`** (0.2.4). Not `no-store`:
   revalidating with the ETag keeps the 304s cheap. See "GitHub facts".
 - **The last background-save error is kept** (0.2.4) in localStorage under
