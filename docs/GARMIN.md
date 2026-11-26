@@ -11,7 +11,7 @@ rather not publish it.
 
 | File | What | Shown in the app |
 |---|---|---|
-| `garmin-recent.json` | today's snapshot: steps, resting HR, body battery, sleep, HRV, readiness, last 14 days of activities | last night's sleep and HRV, as today's row in wellness goals (the rest is for the coach) |
+| `garmin-recent.json` | today's snapshot: steps, resting HR, body battery, sleep, HRV, readiness, last 14 days of activities | last night's sleep and HRV in wellness goals (the report shows each night under the evening it starts) (the rest is for the coach) |
 | `cardio-minutes.csv` | heart rate minute by minute for each activity | no |
 | `cardio-buckets.csv` | seconds in each 5-bpm heart-rate bucket, per activity | heart-rate goals and zones |
 | `daily-wellness.csv` | one row per complete day: steps, sleep, HRV, resting HR… | wellness goals |

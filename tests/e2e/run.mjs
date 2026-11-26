@@ -617,7 +617,8 @@ if (usingFixture) {
   }
 }
 
-// 12. Last night's sleep and HRV (garmin-recent.json) join daily-wellness.csv in the report
+// 12. Last night's sleep and HRV (garmin-recent.json) join daily-wellness.csv in the report,
+//     and every night is filed under the evening it starts (0.4.5): last night is yesterday.
 if (usingFixture) {
   const today = localDate(), wk = weekBounds(today, 'mon');
   const days = [];
@@ -640,9 +641,11 @@ if (usingFixture) {
   let o = await openPage();
   let c = await sleepCard(o.page);
   await o.page.screenshot({ path: path.join(SHOTS, `${String(++n).padStart(2, '0')}-report-last-night.png`), fullPage: true });
-  check('report lists last night\'s sleep under today', c.rows.length === days.length + 1 && c.rows[c.rows.length - 1] === fmtShortDate(today), c.rows.join());
-  check('report counts today in the sleep days', c.sub.includes(`${days.length + 1} day`), c.sub);
-  check('today\'s steps are not taken from the snapshot', c.steps.length === days.length, c.steps.join());
+  // Nights this week: from the week's first evening to last night (yesterday); none on its first day.
+  const lastNight = c => days.length ? c.rows.length === days.length && c.rows[c.rows.length - 1] === fmtShortDate(addDays(today, -1)) : c.rows.length === 0;
+  check('report lists last night\'s sleep under yesterday', lastNight(c), c.rows.join());
+  check('report counts last night in the sleep days', !days.length || c.sub.includes(`${days.length} day`), c.sub);
+  check('sleep and steps end on the same day', c.steps.join() === c.rows.join(), `${c.steps.join()} / ${c.rows.join()}`);
   // A device copy saved by 0.4.2 (no appFiles, no garmin-recent.json) at the current head: 0.4.4 still finds the file.
   await o.page.evaluate(() => new Promise((resolve, reject) => {
     const req = indexedDB.open('traintracks');
@@ -663,13 +666,13 @@ if (usingFixture) {
   await o.page.waitForFunction(() => !document.getElementById('ld').classList.contains('on'), null, { timeout: 20000 });
   await o.page.waitForTimeout(500);
   c = await sleepCard(o.page);
-  check('a device copy from an older version gets garmin-recent.json at the same head', c.rows.length === days.length + 1 && c.rows[c.rows.length - 1] === fmtShortDate(today), c.rows.join());
+  check('a device copy from an older version gets garmin-recent.json at the same head', lastNight(c), c.rows.join());
   await o.ctx.close();
   // An unreadable garmin-recent.json is ignored: the report works from the CSV alone.
   fake.fetch = createFakeGitHub({ ...base, 'garmin-recent.json': '{ not json' }).fetch;
   o = await openPage();
   c = await sleepCard(o.page);
-  check('a malformed garmin-recent.json is ignored', c.rows.length === days.length, c.rows.join());
+  check('a malformed garmin-recent.json is ignored', c.rows.length === Math.max(days.length - 1, 0), c.rows.join());
   await o.ctx.close();
   fake.fetch = oldFetch;
 }

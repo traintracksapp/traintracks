@@ -6,10 +6,10 @@ import { homeSection } from './home.js';
 import { computeGoals, defaultGoals, fmtGoalNum } from '../../lib/goals.js';
 import { fmtRange } from '../../lib/format.js';
 import { localDate } from '../../lib/dates.js';
-import { withTodayWellness } from '../../lib/wellness.js';
+import { reportWellness } from '../../lib/wellness.js';
 
-/** daily-wellness.csv plus last night's sleep and HRV from garmin-recent.json. */
-const wellnessRows = () => withTodayWellness(S.wellness, S.garminRecent);
+/** daily-wellness.csv plus last night's sleep and HRV from garmin-recent.json, each night under the evening it starts. */
+const wellnessRows = () => reportWellness(S.wellness, S.garminRecent);
 
 export function weekCtx(offset) {
   const gc = goalsCfg() || defaultGoals();

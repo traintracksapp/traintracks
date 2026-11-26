@@ -265,6 +265,18 @@ saw only the code rediscovered a deliberate decision as a bug.
   out, since the day is not over and a part-day would drag sums and averages
   down. A CSV row for the date always wins; only finite numbers are taken
   (`lib/wellness.js`). Nothing is written: the CSV stays the record.
+- **A night is filed under the evening it starts** (owner's decision, 0.4.5).
+  Garmin, `daily-wellness.csv` and `garmin-recent.json` date a night by the
+  morning you wake up; the weekly report moves every overnight field (the
+  `sleep_*` columns, `hrv_ms`, `hrv_status`: `NIGHT_FIELDS` in
+  `lib/wellness.js`) back one day, so "last night" is yesterday's row, next to
+  yesterday's steps, and every wellness card ends on the same day. We ask "how
+  much did you sleep last night", not "this morning". A Mon–Sun week holds
+  Monday night through Sunday night, so Sunday night counts once Monday's sync
+  lands and the finished week's sleep average updates then. The files are not
+  changed (the pipeline, the coach and the CSV keep Garmin's dates); only the
+  report's view moves (`byNight`). In 0.4.3–0.4.4 last night showed as today,
+  which put sleep a day ahead of steps.
 - **Averages are judged at the precision they are shown**: an average sleep of 7.09 h shows as 7.1 h, so against a 7.1 h target it is a hit (as in LogTrim).
 - **Scale and blood pressure** are rebuilt in full each run from `GARMIN_HISTORY_START`; if any request fails, the files are left unchanged rather than losing readings.
 

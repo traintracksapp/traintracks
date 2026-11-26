@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { todayWellnessRow, withTodayWellness } from '../lib/wellness.js';
+import { todayWellnessRow, withTodayWellness, byNight, reportWellness, NIGHT_FIELDS } from '../lib/wellness.js';
 import { computeGoals, parseWellnessCSV } from '../lib/goals.js';
 
 // Made-up data. The week of Mon 2030-03-04; "today" is Fri 2030-03-08.
@@ -129,4 +129,60 @@ test('weekly report: a snapshot dated in another week does not touch this one', 
   const old = recent({ today: '2030-02-25', sleep: { ...recent().sleep, date: '2030-02-25' }, hrv: { ...recent().hrv, date: '2030-02-25' } });
   const o = computeGoals(goals, { log: [], wellness: withTodayWellness(csvRows(), old), buckets: {}, gyms: [], week_start: 'mon', today: TODAY });
   assert.equal(o.results[0].daysWithData, 4);
+});
+
+test('byNight: overnight fields move to the evening the night starts; daytime fields keep their day', () => {
+  const rows = csvRows();
+  const copy = JSON.parse(JSON.stringify(rows));
+  const out = byNight(rows);
+  assert.deepEqual(rows, copy, 'input unchanged');
+  assert.deepEqual(out.map(r => r.date), ['2030-03-03', '2030-03-04', '2030-03-05', '2030-03-06', '2030-03-07']);
+  // Sun 03-03: only the night that ended Mon morning.
+  assert.deepEqual(out[0], { date: '2030-03-03', sleep_sec: h(7.6), hrv_ms: 41, hrv_status: 'BALANCED' });
+  // Mon 03-04: Monday's steps and resting HR, Monday night's sleep and HRV (from Tuesday's row).
+  assert.deepEqual(out[1], { date: '2030-03-04', steps: 9000, resting_hr_bpm: 52, sleep_sec: h(6.4), hrv_ms: 39, hrv_status: 'BALANCED' });
+  // Thu 03-07: Thursday's steps; Thursday night is not known yet.
+  assert.deepEqual(out[4], { date: '2030-03-07', steps: 11000, resting_hr_bpm: 51 });
+});
+
+test('byNight: every sleep column and HRV is overnight; nothing else is', () => {
+  const row = { date: '2030-03-08', steps: 1, resting_hr_bpm: 50, body_battery_high: 90, vo2max: 42, stress_avg: 20 };
+  for (const f of NIGHT_FIELDS) row[f] = f === 'hrv_status' ? 'LOW' : 7;
+  const [night, day] = byNight([row]);
+  assert.deepEqual(Object.keys(night).sort(), ['date', ...NIGHT_FIELDS].sort());
+  assert.equal(night.date, '2030-03-07');
+  assert.deepEqual(day, { date: '2030-03-08', steps: 1, resting_hr_bpm: 50, body_battery_high: 90, vo2max: 42, stress_avg: 20 });
+  // A month and a year boundary.
+  assert.equal(byNight([{ date: '2030-01-01', sleep_sec: 1 }])[0].date, '2029-12-31');
+  assert.equal(byNight([{ date: '2030-03-01', hrv_ms: 1 }])[0].date, '2030-02-28');
+});
+
+test('byNight: rows without a valid date are left out; not a list → []', () => {
+  assert.deepEqual(byNight([null, {}, { date: 'yesterday', sleep_sec: 1 }, { date: 20300301, sleep_sec: 1 }]), []);
+  assert.deepEqual(byNight(null), []);
+  assert.deepEqual(byNight('x'), []);
+});
+
+test('weekly report by night: last night is yesterday, next to yesterday\'s steps', () => {
+  const goals = [
+    { id: 'sleep', label: 'Average sleep', kind: 'avg', source: 'wellness', field: 'sleep_sec', target: h(7.1), display: 'h' },
+    { id: 'hrv', label: 'Average HRV', kind: 'avg', source: 'wellness', field: 'hrv_ms', target: 40 },
+    { id: 'steps', label: 'Total steps', kind: 'sum', source: 'wellness', field: 'steps', target: 70000 }
+  ];
+  const run = (offset = 0) => computeGoals(goals, { log: [], wellness: reportWellness(csvRows(), recent()), buckets: {}, gyms: [], week_start: 'mon', today: TODAY, offset });
+  const g = (o, id) => o.results.find(r => r.id === id);
+  const o = run();
+  // Nights Mon–Thu: 6.4, 6.9, 7.2 and last night's 8.05 → 7.1375 h, shown as 7.1 h: met.
+  assert.deepEqual(g(o, 'sleep').items.map(i => i.date), ['2030-03-04', '2030-03-05', '2030-03-06', '2030-03-07']);
+  assert.equal(g(o, 'sleep').items[3].value, h(8.05));
+  assert.equal(g(o, 'sleep').value, h(7.1));
+  assert.equal(g(o, 'sleep').status, 'hit');
+  assert.equal(g(o, 'hrv').value, 42.8); // 39, 42, 43, 47
+  // Every card ends on the same day: yesterday.
+  assert.deepEqual(g(o, 'steps').items.map(i => i.date), g(o, 'sleep').items.map(i => i.date));
+  assert.equal(g(o, 'steps').value, 38000);
+  // Sunday night (woke Monday 03-04) belongs to last week.
+  const last = run(-1);
+  assert.deepEqual(g(last, 'sleep').items.map(i => [i.date, i.value]), [['2030-03-03', h(7.6)]]);
+  assert.deepEqual(g(last, 'steps').items, []);
 });

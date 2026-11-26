@@ -193,7 +193,7 @@ their names and units now so nothing has to be renamed later.
 | `goals.json` | Keys in `snake_case` (`week_start`, `hr_zones_bpm`, `machine_ids`, `hr_min_bpm`...). Targets use the unit of the field they measure: a sleep goal of 7.1 h is stored as `25560`; a "minutes under 120 bpm" goal of 180 min as `10800`. The editor shows hours and minutes. |
 | `equipment/**/gym.json` | Keys in `snake_case` (`log_type`, `muscles_worked`, `is_generic`, `variations_default`). |
 | `suggested-workout.json` | Keys in `snake_case` (`generated_at`, `coach_note`, `machine_id`); set fields use the log's names (`weight_lb`, `reps`, `duration_sec`). |
-| `garmin-recent.json` | Keys in `snake_case` with the unit suffixes above. `sleep.date` and (since 0.4.3) `hrv.date` name the night's wake-up date, which is yesterday when today's is not available yet. The app reads only `today`, `sleep` and `hrv` (`lib/wellness.js`). |
+| `garmin-recent.json` | Keys in `snake_case` with the unit suffixes above. `sleep.date` and (since 0.4.3) `hrv.date` name the night's wake-up date, which is yesterday when today's is not available yet. The app reads only `today`, `sleep` and `hrv` (`lib/wellness.js`). The files keep Garmin's wake-up dates; the weekly report shows each night under the evening it starts (0.4.5). |
 
 The migration converts all of them.
 
